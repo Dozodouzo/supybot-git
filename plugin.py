@@ -451,6 +451,17 @@ class Git(callbacks.PluginRegexp):
 
     repositories = wrap(repositories, ['channel'])
 
+    def branches(self, irc, msg, args, channel, repo):
+        """ <repository name>
+        Display the watched branches for a given repository.
+        """
+        repository = self._parse_repo(irc, msg, repo, channel)
+        if not repository:
+            return
+        irc.reply('Watched branches: ' + ', '.join(repository.branches))
+
+    branches = wrap(branches, ['channel', 'somethingWithoutSpaces'])
+
     def gitrehash(self, irc, msg, args):
         "Obsolete command, remove this function eventually."
         irc.reply('"gitrehash" is obsolete, please use "rehash".')
