@@ -97,6 +97,20 @@ def synchronized(tlockname):
     return _synched
 
 
+def _get_commits(repo, first, last):
+    if GIT_API_VERSION == 1:
+        return repo.commits_between(first, last)
+    elif GIT_API_VERSION == 3:
+        rev = "%s..%s" % (first, last)
+        # Workaround for GitPython bug:
+        # https://github.com/gitpython-developers/GitPython/issues/61
+        repo.odb.update_cache()
+        return repo.iter_commits(rev)
+    else:
+        raise Exception("Unsupported API version: %d" % GIT_API_VERSION)
+
+
+
 class Repository(object):
     "Represents a git repository being monitored."
 
@@ -182,16 +196,7 @@ class Repository(object):
     @synchronized('lock')
     def get_new_commits(self):
         log_debug("Poll: previous commit: %s" % str(self.last_commit)[:7])
-        if GIT_API_VERSION == 1:
-            result = self.repo.commits_between(self.last_commit, self.branch)
-        elif GIT_API_VERSION == 3:
-            rev = "%s..%s" % (self.last_commit, self.branch)
-            # Workaround for GitPython bug:
-            # https://github.com/gitpython-developers/GitPython/issues/61
-            self.repo.odb.update_cache()
-            result = self.repo.iter_commits(rev)
-        else:
-            raise Exception("Unsupported API version: %d" % GIT_API_VERSION)
+        result = get_commits(self.repo, self.last_commit, self.branch)
         self.last_commit = self.repo.commit(self.branch)
         results = list(result)
         log_debug("Poll: last commit: %s, %d commits" %
