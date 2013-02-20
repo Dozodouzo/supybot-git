@@ -76,9 +76,9 @@ Let's break down the possible settings:
   information about the repository. All interaction with the repository is
   limited to these channels.
 
-* `branch`: *Optional.* The branch to follow for this repository. If you want
-  to follow multiple branches, you need to define multiple repository sections
-  with different nicknames.  Default: master.
+* `branches`: *Optional.* Space-separated list fo branches to follow for 
+   this repository. Accepts wildcards, '*' means all branches, 'release*' 
+   all branches beginnning with 'release'. Default: master
 
 * `commit link`: *Optional.* A format string describing how to link to a
   particular commit. These links may appear in commit notifications from the
