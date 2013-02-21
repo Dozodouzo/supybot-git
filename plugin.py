@@ -48,18 +48,23 @@ import traceback
 GIT_API_VERSION = -1
 _DEBUG = False
 
+
 def log_debug(message):
     if _DEBUG:
         log.info("Git: " + message)
 
+
 def log_info(message):
     log.info("Git: " + message)
+
 
 def log_warning(message):
     log.warning("Git: " + message)
 
+
 def log_error(message):
     log.error("Git: " + message)
+
 
 def plural(count, singular, plural=None):
     if count == 1:
@@ -71,6 +76,7 @@ def plural(count, singular, plural=None):
     if singular[-1] == 'y':
         return singular[:-1] + 'ies'
     return singular + 's'
+
 
 def synchronized(tlockname):
     """
@@ -89,6 +95,7 @@ def synchronized(tlockname):
                 tlock.release()
         return _synchronizer
     return _synched
+
 
 class Repository(object):
     "Represents a git repository being monitored."
@@ -143,9 +150,9 @@ class Repository(object):
         if not os.path.exists(self.path):
             git.Git('.').clone(self.url, self.path, no_checkout=True)
         self.repo = git.Repo(self.path)
-        try: 
+        try:
             self.last_commit = self.repo.commit(self.branch)
-        except: 
+        except:
             log_error("Cannot checkout repo branch: " + self.branch)
 
     @synchronized('lock')
@@ -158,9 +165,9 @@ class Repository(object):
         "Fetch the commit with the given SHA.  Returns None if not found."
         try:
             return self.repo.commit(sha)
-        except ValueError: # 0.1.x
+        except ValueError:    # 0.1.x
             return None
-        except git.GitCommandError: # 0.3.x
+        except git.GitCommandError:    # 0.3.x
             return None
 
     @synchronized('lock')
@@ -231,7 +238,7 @@ class Repository(object):
         MODE_COLOR = 2
         subst = {
             'a': commit.author.name,
-            'b': self.branch[self.branch.rfind('/')+1:],
+            'b': self.branch[self.branch.rfind('/') + 1:],
             'c': self.get_commit_id(commit)[0:7],
             'C': self.get_commit_id(commit),
             'e': commit.author.email,
@@ -286,11 +293,12 @@ class Repository(object):
         self.errors = []
         return result
 
+
 class Git(callbacks.PluginRegexp):
     "Please see the README file to configure and use this plugin."
 
     threaded = True
-    unaddressedRegexps = [ '_snarf' ]
+    unaddressedRegexps = ['_snarf']
 
     def __init__(self, irc):
         self.init_git_python()
@@ -407,10 +415,10 @@ class Git(callbacks.PluginRegexp):
         if len(commits) > commits_at_once:
             irc.queueMsg(ircmsgs.privmsg(channel,
                          "Showing latest %d of %d commits to %s..." % (
-                commits_at_once,
-                len(commits),
-                repository.long_name,
-            )))
+                         commits_at_once,
+                         len(commits),
+                         repository.long_name,
+                         )))
         for commit in commits[-commits_at_once:]:
             lines = repository.format_message(commit)
             for line in lines:
@@ -525,7 +533,7 @@ class Git(callbacks.PluginRegexp):
         if self.fetcher:
             try:
                 self.fetcher.stop()
-                self.fetcher.join() # This might take time, but it's safest.
+                self.fetcher.join()    # This might take time, but it's safest.
             except Exception, e:
                 log_error('Stopping fetcher: %s' % str(e))
             self.fetcher = None
@@ -536,12 +544,13 @@ class Git(callbacks.PluginRegexp):
         except Exception, e:
             log_error('Stopping scheduled task: %s' % str(e))
 
+
 class GitFetcher(threading.Thread):
     "A thread object to perform long-running Git operations."
 
     # I don't know of any way to shut down a thread except to have it
     # check a variable very frequently.
-    SHUTDOWN_CHECK_PERIOD = 0.1 # Seconds
+    SHUTDOWN_CHECK_PERIOD = 0.1     # Seconds
 
     # TODO: Wrap git fetch command and enforce a timeout.  Git will probably
     # timeout on its own in most cases, but I have actually seen it hang
@@ -555,7 +564,7 @@ class GitFetcher(threading.Thread):
         """
         super(GitFetcher, self).__init__(*args, **kwargs)
         self.repository_list = repositories
-        self.period = period * 1.1 # Hacky attempt to avoid resonance
+        self.period = period * 1.1        # Hacky attempt to avoid resonance
         self.shutdown = False
 
     def stop(self):
@@ -569,11 +578,12 @@ class GitFetcher(threading.Thread):
         "The main thread method."
         # Initially wait for half the period to stagger this thread and
         # the main thread and avoid lock contention.
-        end_time = time.time() + self.period/2
+        end_time = time.time() + self.period / 2
         while not self.shutdown:
             try:
                 for repository in self.repository_list:
-                    if self.shutdown: break
+                    if self.shutdown:
+                        break
                     if repository.lock.acquire(blocking=False):
                         try:
                             repository.fetch()
@@ -591,6 +601,7 @@ class GitFetcher(threading.Thread):
             while not self.shutdown and time.time() < end_time:
                 time.sleep(GitFetcher.SHUTDOWN_CHECK_PERIOD)
             end_time = time.time() + self.period
+
 
 class LogWrapper(object):
     """

@@ -64,6 +64,7 @@ conf.supybot.commands.defaultPlugins.get('log').set('Git')
 GIT_API_VERSION = int(git.__version__[2])
 assert GIT_API_VERSION == 3, 'Tests only run against GitPython 0.3.x+ API.'
 
+
 class PluginTestCaseUtilMixin(object):
     "Some additional utilities used in this plugin's tests."
 
@@ -93,6 +94,7 @@ class PluginTestCaseUtilMixin(object):
                          ('\n'.join(responses), '\n'.join(expectedResponses)))
         return responses
 
+
 class GitRehashTest(PluginTestCase):
     plugins = ('Git',)
 
@@ -107,6 +109,7 @@ class GitRehashTest(PluginTestCase):
     def testRehashOne(self):
         conf.supybot.plugins.Git.configFile.setValue(DATA_DIR + '/one.ini')
         self.assertResponse('rehash', 'Git reinitialized with 1 repository.')
+
 
 class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     channel = '#test'
@@ -126,6 +129,7 @@ class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         ]
         self.assertResponses('repositories', expected)
 
+
 class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     channel = '#unused'
     plugins = ('Git',)
@@ -143,6 +147,7 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     def testLogNoAccess(self):
         expected = ['Sorry, not allowed in this channel.']
         self.assertResponses('log test1', expected)
+
 
 class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     channel = '#somewhere'
@@ -211,5 +216,6 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         ]
         self.assertResponses('who wants some deadbeef?', expected,
                              usePrefixChar=False)
+
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:

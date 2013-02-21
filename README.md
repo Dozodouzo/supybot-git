@@ -206,3 +206,12 @@ to handle the `log` command:
 
 Alternatively, specify `@git log` instead of just `@log` when calling.
 This was reported as issue #9.
+
+Static checking
+---------------
+
+pep8:
+
+  $ pep8 --config pep8.conf . > pep8.log
+
+

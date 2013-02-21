@@ -23,6 +23,7 @@
 import supybot.conf as conf
 import supybot.registry as registry
 
+
 def configure(advanced):
     # This will be called by supybot to configure this module.  advanced is
     # a bool that specifies whether the user identified himself as an advanced
@@ -31,7 +32,9 @@ def configure(advanced):
     from supybot.questions import expect, anything, something, yn
     conf.registerPlugin('Git', True)
 
+
 Git = conf.registerPlugin('Git')
+
 
 conf.registerGlobalValue(Git, 'configFile',
     registry.String('git.ini', """The path to the repository configuration
@@ -56,5 +59,6 @@ conf.registerGlobalValue(Git, 'enableSnarf',
     registry.Boolean(True, "Enable snarf i. e., that the bot displays"
                            " commit if a sha is found in the channel"
                            " conversation"))
+
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
