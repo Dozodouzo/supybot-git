@@ -33,11 +33,13 @@ import supybot.ircmsgs as ircmsgs
 import supybot.callbacks as callbacks
 import supybot.schedule as schedule
 import supybot.log as log
+import supybot.registry as registry
 import supybot.world as world
 
 import ConfigParser
 import fnmatch
 from functools import wraps
+from git import GitCommandError
 import os
 import threading
 import time
@@ -206,7 +208,7 @@ class Repository(object):
                 else:
                     self.repo.remote().fetch(branch + ':' + branch)
                 self.commit_by_branch[branch] = self.repo.commit(branch)
-            except:
+            except GitCommandError:
                 log_error("Cannot checkout repo branch: " + branch)
 
     @synchronized('lock')
@@ -370,7 +372,7 @@ class Git(callbacks.PluginRegexp):
         self._stop_polling()
         try:
             self._read_config()
-        except Exception, e:
+        except (registry.NonExistentRegistryEntry, ConfigParser.Error) as e:
             if 'reply' in dir(irc):
                 irc.reply('Warning: %s' % str(e))
             else:
@@ -445,12 +447,12 @@ class Git(callbacks.PluginRegexp):
         self._stop_polling()
         try:
             self._read_config()
-            self._schedule_next_event()
-            n = len(self.repository_list)
-            irc.reply('Git reinitialized with %d %s.' %
-                      (n, plural(n, 'repository')))
-        except Exception, e:
+        except (registry.NonExistentRegistryEntry, ConfigParser.Error) as e:
             irc.reply('Warning: %s' % str(e))
+        self._schedule_next_event()
+        n = len(self.repository_list)
+        irc.reply('Git reinitialized with %d %s.' %
+                      (n, plural(n, 'repository')))
 
     rehash = wrap(rehash, [])
 
@@ -586,7 +588,7 @@ class Git(callbacks.PluginRegexp):
                         for branch in new_commits_by_branch:
                             repository.commit_by_branch[branch] = \
                                repository.get_commit(branch)
-                    except Exception, e:
+                    except GitCommandError as e:
                         log_error('Exception in _poll repository %s: %s' %
                                 (repository.short_name, str(e)))
                     finally:
@@ -595,7 +597,7 @@ class Git(callbacks.PluginRegexp):
                     log.info('Postponing repository read: %s: Locked.' %
                         repository.long_name)
             self._schedule_next_event()
-        except Exception, e:
+        except Exception, e:                        # pylint: disable=W0703
             log_error('Exception in _poll(): %s' % str(e))
             traceback.print_exc(e)
 
@@ -644,9 +646,9 @@ class Git(callbacks.PluginRegexp):
     def _stop_polling(self):
         '''
         Stop  the gitFetcher. Never allow an exception to propagate since
-
-         this is called in die()
+        this is called in die()
         '''
+        # pylint: disable=W0703
         if self.fetcher:
             try:
                 self.fetcher.stop()
@@ -697,23 +699,19 @@ class GitFetcher(threading.Thread):
         # the main thread and avoid lock contention.
         end_time = time.time() + self.period / 2
         while not self.shutdown:
-            try:
-                for repository in self.repository_list:
-                    if self.shutdown:
-                        break
-                    if repository.lock.acquire(blocking=False):
-                        try:
-                            repository.fetch()
-                        except Exception, e:
-                            repository.record_error(e)
-                        finally:
-                            repository.lock.release()
-                    else:
-                        log_info('Postponing repository fetch: %s: Locked.' %
-                                 repository.long_name)
-            except Exception, e:
-                log_error('Exception checking repository %s: %s' %
-                          (repository.short_name, str(e)))
+            for repository in self.repository_list:
+                if self.shutdown:
+                    break
+                if repository.lock.acquire(blocking=False):
+                    try:
+                        repository.fetch()
+                    except GitCommandError as e:
+                        repository.record_error(e)
+                    finally:
+                        repository.lock.release()
+                else:
+                    log_info('Postponing repository fetch: %s: Locked.' %
+                             repository.long_name)
             # Wait for the next periodic check
             while not self.shutdown and time.time() < end_time:
                 time.sleep(GitFetcher.SHUTDOWN_CHECK_PERIOD)
