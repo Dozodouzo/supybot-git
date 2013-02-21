@@ -124,6 +124,38 @@ def _get_commits(repo, first, last):
     return repo.iter_commits(rev)
 
 
+class _Options(object):
+    ''' Simple container for option values. '''
+
+    class BadInifileException(Exception):
+        ''' Missing/bad values in git.ini-like config file. '''
+        pass
+
+    def __init__(self, options, long_name):
+        required_values = ['short name', 'url']
+        optional_values = ['branches', 'channels', 'commit link',
+                           'commit message', 'group header']
+        for name in required_values:
+            if name not in options:
+                raise self.BadInifileException(
+                        'Section %s missing required value: %s' %
+                        (long_name, name))
+        for name in options.keys():
+            if name not in required_values and name not in optional_values:
+                raise self.BadInifileException(
+                        'Section %s contains unrecognized value: %s' %
+                        (long_name, name))
+        self.short_name = options['short name']
+        self.branches = options.get('branches', 'master')
+        self.channels = options.get('channels',
+                                    options.get('channel')).split()
+        self.commit_msg = options.get('commit message', '[%s|%b|%a] %m')
+        self.commit_link = options.get('commit link', '')
+        self.url = options['url']
+        header = options.get('group header', 'True')
+        self.group_header = header.lower() in ['1', 'true', 'on', 'enabled']
+
+
 class Repository(object):
     "Represents a git repository being monitored."
 
@@ -132,45 +164,12 @@ class Repository(object):
         Initialize with a repository with the given name and dict of options
         from the config section.
         """
-
-        class Options(object):
-            ''' Simple container for optiona values. '''
-            pass
-
-        # Validate configuration ("channel" allowed for backward compatibility)
-        required_values = ['short name', 'url']
-        optional_values = ['branches', 'channel', 'channels', 'commit link',
-                           'commit message', 'group header']
-
-        for name in required_values:
-            if name not in options:
-                raise Exception('Section %s missing required value: %s' %
-                        (long_name, name))
-        for name in options.keys():
-            if name not in required_values and name not in optional_values:
-                raise Exception('Section %s contains unrecognized value: %s' %
-                        (long_name, name))
-
         self.long_name = long_name
-        self.options = Options()
-        self.options.short_name = options['short name']
-        self.options.branches = options.get('branches', ['master'])
-        self.options.channels = options.get('channels',
-                                            options.get('channel')).split()
-        self.options.commit_msg = options.get('commit message',
-                                              '[%s|%b|%a] %m')
-        self.options.commit_link = options.get('commit link', '')
-        self.options.url = options['url']
-        header = options.get('group header', 'True')
-        self.options.group_header = \
-            header.lower() in ['true', 'yes', '1', 'on']
-
-        self.branches = []
+        self.options = _Options(options, long_name)
         self.commit_by_branch = {}
         self.errors = []
         self.lock = threading.RLock()
         self.repo = None
-
         if not os.path.exists(repo_dir):
             os.makedirs(repo_dir)
         self.path = os.path.join(repo_dir, self.options.short_name)
@@ -203,9 +202,8 @@ class Repository(object):
         if not os.path.exists(self.path):
             git.Git('.').clone(self.options.url, self.path, no_checkout=True)
         self.repo = git.Repo(self.path)
-        self.branches = get_branches(self.options.branches, self.repo)
         self.commit_by_branch = {}
-        for branch in self.branches:
+        for branch in get_branches(self.options.branches, self.repo):
             try:
                 if str(self.repo.active_branch) == branch:
                     self.repo.remote().pull(branch)
@@ -214,6 +212,8 @@ class Repository(object):
                 self.commit_by_branch[branch] = self.repo.commit(branch)
             except GitCommandError:
                 log_error("Cannot checkout repo branch: " + branch)
+
+    branches = property(lambda self: self.commit_by_branch.keys())
 
     @synchronized('lock')
     def fetch(self):
