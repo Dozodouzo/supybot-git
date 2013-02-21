@@ -156,7 +156,7 @@ class _Options(object):
         self.group_header = header.lower() in ['1', 'true', 'on', 'enabled']
 
 
-class Repository(object):
+class _Repository(object):
     "Represents a git repository being monitored."
 
     def __init__(self, repo_dir, long_name, options):
@@ -386,7 +386,8 @@ class Git(callbacks.PluginRegexp):
         parser.read(config)
         for section in parser.sections():
             options = dict(parser.items(section))
-            self.repository_list.append(Repository(repo_dir, section, options))
+            self.repository_list.append(
+                                _Repository(repo_dir, section, options))
 
     def _display_some_commits(self, irc, channel,
                               repository, commits, branch):
