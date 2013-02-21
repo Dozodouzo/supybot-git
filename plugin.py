@@ -39,17 +39,21 @@ import supybot.world as world
 import ConfigParser
 import fnmatch
 from functools import wraps
-from git import GitCommandError
 import os
 import threading
 import time
 import traceback
 
-# 'import git' is performed during plugin initialization.
-#
-# The GitPython library has different APIs depending on the version installed.
-# (0.1.x, 0.3.x supported)
-GIT_API_VERSION = -1
+try:
+    import git
+except ImportError:
+    raise Exception("GitPython is not installed.")
+if not git.__version__.startswith('0.'):
+    raise Exception("Unsupported GitPython version.")
+if not int(git.__version__[2]) == 3:
+    raise Exception("Unsupported GitPython version: " + git.__version__[2])
+from git import GitCommandError
+
 _DEBUG = False
 
 
@@ -113,16 +117,11 @@ def synchronized(tlockname):
 
 def _get_commits(repo, first, last):
     ''' Return list of commits in repo from first to last, inclusive.'''
-    if GIT_API_VERSION == 1:
-        return repo.commits_between(first, last)
-    elif GIT_API_VERSION == 3:
-        rev = "%s..%s" % (first, last)
-        # Workaround for GitPython bug:
-        # https://github.com/gitpython-developers/GitPython/issues/61
-        repo.odb.update_cache()
-        return repo.iter_commits(rev)
-    else:
-        raise Exception("Unsupported API version: %d" % GIT_API_VERSION)
+    rev = "%s..%s" % (first, last)
+    # Workaround for GitPython bug:
+    # https://github.com/gitpython-developers/GitPython/issues/61
+    repo.odb.update_cache()
+    return repo.iter_commits(rev)
 
 
 class Repository(object):
@@ -133,9 +132,6 @@ class Repository(object):
         Initialize with a repository with the given name and dict of options
         from the config section.
         """
-
-        if GIT_API_VERSION == -1:
-            raise Exception("Git-python API version uninitialized.")
 
         # Validate configuration ("channel" allowed for backward compatibility)
         required_values = ['short name', 'url']
@@ -227,20 +223,13 @@ class Repository(object):
         # pylint: disable=E0602
         try:
             return self.repo.commit(sha)
-        except ValueError:    # 0.1.x
-            return None
-        except git.GitCommandError:    # 0.3.x
+        except git.GitCommandError:
             return None
 
     @synchronized('lock')
     def get_commit_id(self, commit):
         ''' Return the id i. e., the 40-char git sha. '''
-        if GIT_API_VERSION == 1:
-            return commit.id
-        elif GIT_API_VERSION == 3:
-            return commit.hexsha
-        else:
-            raise Exception("Unsupported API version: %d" % GIT_API_VERSION)
+        return commit.hexsha
 
     @synchronized('lock')
     def get_new_commits(self):
@@ -263,12 +252,7 @@ class Repository(object):
     @synchronized('lock')
     def get_recent_commits(self, branch, count):
         ''' Return count top commits for a branch in a repo. '''
-        if GIT_API_VERSION == 1:
-            return self.repo.commits(start=branch, max_count=count)
-        elif GIT_API_VERSION == 3:
-            return list(self.repo.iter_commits(branch))[:count]
-        else:
-            raise Exception("Unsupported API version: %d" % GIT_API_VERSION)
+        return list(self.repo.iter_commits(branch))[:count]
 
     @synchronized('lock')
     def format_link(self, commit):
@@ -366,7 +350,6 @@ class Git(callbacks.PluginRegexp):
 
     def __init__(self, irc):
         # pylint: disable=W0233,W0231
-        self.init_git_python()
         self.__parent = super(Git, self)
         self.__parent.__init__(irc)
         self.fetcher = None
@@ -381,21 +364,6 @@ class Git(callbacks.PluginRegexp):
                 # During bot startup, there is no one to reply to.
                 log_warning(str(e))
         self._schedule_next_event()
-
-    def init_git_python(self):
-        ''' import git and set GIT_API_VERSION. '''
-        global GIT_API_VERSION, git                # pylint: disable=W0602
-        try:
-            import git
-        except ImportError:
-            raise Exception("GitPython is not installed.")
-        if not git.__version__.startswith('0.'):
-            raise Exception("Unsupported GitPython version.")
-        GIT_API_VERSION = int(git.__version__[2])
-        if not GIT_API_VERSION in [1, 3]:
-            log_error('GitPython version %s unrecognized, using 0.3.x API.'
-                    % git.__version__)
-            GIT_API_VERSION = 3
 
     def die(self):
         ''' Stop all threads.  '''
