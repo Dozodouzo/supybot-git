@@ -133,6 +133,10 @@ class Repository(object):
         from the config section.
         """
 
+        class Options(object):
+            ''' Simple container for optiona values. '''
+            pass
+
         # Validate configuration ("channel" allowed for backward compatibility)
         required_values = ['short name', 'url']
         optional_values = ['branches', 'channel', 'channels', 'commit link',
@@ -147,25 +151,29 @@ class Repository(object):
                 raise Exception('Section %s contains unrecognized value: %s' %
                         (long_name, name))
 
-        # Initialize
-        self.branches_opt = options.get('branches', ['master'])
+        self.long_name = long_name
+        self.options = Options()
+        self.options.short_name = options['short name']
+        self.options.branches = options.get('branches', ['master'])
+        self.options.channels = options.get('channels',
+                                            options.get('channel')).split()
+        self.options.commit_msg = options.get('commit message',
+                                              '[%s|%b|%a] %m')
+        self.options.commit_link = options.get('commit link', '')
+        self.options.url = options['url']
+        header = options.get('group header', 'True')
+        self.options.group_header = \
+            header.lower() in ['true', 'yes', '1', 'on']
+
         self.branches = []
         self.commit_by_branch = {}
-        self.channels = options.get('channels', options.get('channel')).split()
-        self.commit_link = options.get('commit link', '')
-        self.commit_message = options.get('commit message', '[%s|%b|%a] %m')
         self.errors = []
-        header = options.get('group header', 'True')
-        self.group_header = header.lower() in ['true', 'yes', '1']
         self.lock = threading.RLock()
-        self.long_name = long_name
-        self.short_name = options['short name']
         self.repo = None
-        self.url = options['url']
 
         if not os.path.exists(repo_dir):
             os.makedirs(repo_dir)
-        self.path = os.path.join(repo_dir, self.short_name)
+        self.path = os.path.join(repo_dir, self.options.short_name)
 
         # TODO: Move this to GitWatcher (separate thread)
         self.clone()
@@ -193,9 +201,9 @@ class Repository(object):
 
         # pylint: disable=E0602
         if not os.path.exists(self.path):
-            git.Git('.').clone(self.url, self.path, no_checkout=True)
+            git.Git('.').clone(self.options.url, self.path, no_checkout=True)
         self.repo = git.Repo(self.path)
-        self.branches = get_branches(self.branches_opt, self.repo)
+        self.branches = get_branches(self.options.branches, self.repo)
         self.commit_by_branch = {}
         for branch in self.branches:
             try:
@@ -259,7 +267,7 @@ class Repository(object):
         "Return a link to view a given commit, based on config setting."
         result = ''
         escaped = False
-        for c in self.commit_link:
+        for c in self.options.commit_link:
             if escaped:
                 if c == 'c':
                     result += self.get_commit_id(commit)[0:7]
@@ -292,15 +300,15 @@ class Repository(object):
             'l': self.format_link(commit),
             'm': commit.message.split('\n')[0],
             'n': self.long_name,
-            's': self.short_name,
+            's': self.options.short_name,
             'S': ' ',
-            'u': self.url,
+            'u': self.options.url,
             'r': '\x0f',
             '!': '\x02',
             '%': '%',
         }
         result = []
-        lines = self.commit_message.split('\n')
+        lines = self.options.commit_msg.split('\n')
         for line in lines:
             mode = MODE_NORMAL
             outline = ''
@@ -413,7 +421,7 @@ class Git(callbacks.PluginRegexp):
         for branch, commits in commits_by_branch.iteritems():
             for a in set([c.author.name for c in commits]):
                 commits_ = [c for c in commits if c.author.name == a]
-                if not repository.group_header or ctx == 'repolog':
+                if not repository.options.group_header or ctx == 'repolog':
                     self._display_some_commits(irc, channel,
                                                repository, commits_, branch)
                     continue
@@ -421,8 +429,9 @@ class Git(callbacks.PluginRegexp):
                     line = "Talking about %s?" % \
                                 repository.get_commit_id(commits_[0])[0:7]
                 else:
+                    name = repository.options.short_name
                     line = "%s pushed %d commit(s) to %s at %s" % (
-                        a, len(commits_), branch, repository.short_name)
+                        a, len(commits_), name)
                 msg = ircmsgs.privmsg(channel, line)
                 irc.queueMsg(msg)
                 self._display_some_commits(irc, channel,
@@ -459,7 +468,7 @@ class Git(callbacks.PluginRegexp):
                        repository.get_commit(branch)
             except GitCommandError as e:
                 log_error('Exception in _poll repository %s: %s' %
-                        (repository.short_name, str(e)))
+                        (repository.options.short_name, str(e)))
             finally:
                 repository.lock.release()
         else:
@@ -479,7 +488,7 @@ class Git(callbacks.PluginRegexp):
             # Find the IRC/channel pairs to notify
             targets = []
             for irc in world.ircs:
-                for channel in repository.channels:
+                for channel in repository.options.channels:
                     if channel in irc.state.channels:
                         targets.append((irc, channel))
             if not targets:
@@ -515,7 +524,8 @@ class Git(callbacks.PluginRegexp):
 
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
-        matches = filter(lambda r: r.short_name == repo, self.repository_list)
+        matches = filter(lambda r: r.options.short_name == repo,
+                         self.repository_list)
         if not matches:
             irc.reply('No repository named %s, showing available:'
                       % repo)
@@ -524,7 +534,7 @@ class Git(callbacks.PluginRegexp):
         # Enforce a modest privacy measure... don't let people probe the
         # repository outside the designated channel.
         repository = matches[0]
-        if channel not in repository.channels:
+        if channel not in repository.options.channels:
             irc.reply('Sorry, not allowed in this channel.')
             return None
         return repository
@@ -535,7 +545,7 @@ class Git(callbacks.PluginRegexp):
             return
         sha = match.group('sha')
         channel = msg.args[0]
-        repositories = filter(lambda r: channel in r.channels,
+        repositories = filter(lambda r: channel in r.options.channels,
                               self.repository_list)
         for repository in repositories:
             commit = repository.get_commit(sha)
@@ -594,7 +604,7 @@ class Git(callbacks.PluginRegexp):
 
         Display the names of known repositories configured for this channel.
         """
-        repositories = filter(lambda r: channel in r.channels,
+        repositories = filter(lambda r: channel in r.options.channels,
                               self.repository_list)
         if not repositories:
             irc.reply('No repositories configured for this channel.')
@@ -603,8 +613,8 @@ class Git(callbacks.PluginRegexp):
             fmt = '\x02%(short_name)s\x02 (%(name)s)'
             irc.reply(fmt % {
                 'name': r.long_name,
-                'short_name': r.short_name,
-                'url': r.url,
+                'short_name': r.options.short_name,
+                'url': r.options.url,
             })
 
     repositories = wrap(repositories, ['channel'])
