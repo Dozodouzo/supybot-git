@@ -521,6 +521,32 @@ class Git(callbacks.PluginRegexp):
                 self._display_some_commits(irc, channel,
                                            repository, commits_, branch)
 
+    def _poll_repository(self, repository, targets):
+        ''' Perform poll of a repo, display changes. '''
+        # Manual non-blocking lock calls here to avoid potentially long
+        # waits (if it fails, hope for better luck in the next _poll).
+        if repository.lock.acquire(blocking=False):
+            try:
+                errors = repository.get_errors()
+                for e in errors:
+                    log_error('Unable to fetch %s: %s' %
+                        (repository.long_name, str(e)))
+                new_commits_by_branch = repository.get_new_commits()
+                for irc, channel in targets:
+                    self._display_commits(irc, channel, repository,
+                                          new_commits_by_branch)
+                for branch in new_commits_by_branch:
+                    repository.commit_by_branch[branch] = \
+                       repository.get_commit(branch)
+            except GitCommandError as e:
+                log_error('Exception in _poll repository %s: %s' %
+                        (repository.short_name, str(e)))
+            finally:
+                repository.lock.release()
+        else:
+            log.info('Postponing repository read: %s: Locked.' %
+                repository.long_name)
+
     def _poll(self):
         ''' Look for and handle new commits in local copy of repo. '''
         # Note that polling happens in two steps:
@@ -530,46 +556,23 @@ class Git(callbacks.PluginRegexp):
         # 2. This _poll occurs, and looks for new commits in those local
         #    copies.  (Therefore this function should be quick. If it is
         #    slow, it may block the entire bot.)
-        try:
-            for repository in self.repository_list:
-                # Find the IRC/channel pairs to notify
-                targets = []
-                for irc in world.ircs:
-                    for channel in repository.channels:
-                        if channel in irc.state.channels:
-                            targets.append((irc, channel))
-                if not targets:
-                    log_info("Skipping %s: not in configured channel(s)." %
-                             repository.long_name)
-                    continue
-
-                # Manual non-blocking lock calls here to avoid potentially long
-                # waits (if it fails, hope for better luck in the next _poll).
-                if repository.lock.acquire(blocking=False):
-                    try:
-                        errors = repository.get_errors()
-                        for e in errors:
-                            log_error('Unable to fetch %s: %s' %
-                                (repository.long_name, str(e)))
-                        new_commits_by_branch = repository.get_new_commits()
-                        for irc, channel in targets:
-                            self._display_commits(irc, channel, repository,
-                                                  new_commits_by_branch)
-                        for branch in new_commits_by_branch:
-                            repository.commit_by_branch[branch] = \
-                               repository.get_commit(branch)
-                    except GitCommandError as e:
-                        log_error('Exception in _poll repository %s: %s' %
-                                (repository.short_name, str(e)))
-                    finally:
-                        repository.lock.release()
-                else:
-                    log.info('Postponing repository read: %s: Locked.' %
-                        repository.long_name)
-            self._schedule_next_event()
-        except Exception, e:                        # pylint: disable=W0703
-            log_error('Exception in _poll(): %s' % str(e))
-            traceback.print_exc(e)
+        for repository in self.repository_list:
+            # Find the IRC/channel pairs to notify
+            targets = []
+            for irc in world.ircs:
+                for channel in repository.channels:
+                    if channel in irc.state.channels:
+                        targets.append((irc, channel))
+            if not targets:
+                log_info("Skipping %s: not in configured channel(s)." %
+                         repository.long_name)
+                continue
+            try:
+                self._poll_repository(repository, targets)
+            except Exception, e:                        # pylint: disable=W0703
+                log_error('Exception in _poll(): %s' % str(e))
+                traceback.print_exc(e)
+        self._schedule_next_event()
 
     def _read_config(self):
         ''' Read module config file, normally git.ini. '''
