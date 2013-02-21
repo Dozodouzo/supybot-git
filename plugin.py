@@ -24,7 +24,11 @@
 A Supybot plugin that monitors and interacts with git repositories.
 """
 
-from supybot.commands import *
+from supybot.commands import optional
+from supybot.commands import threading
+from supybot.commands import time
+from supybot.commands import wrap
+
 import supybot.ircmsgs as ircmsgs
 import supybot.callbacks as callbacks
 import supybot.schedule as schedule
@@ -32,12 +36,12 @@ import supybot.log as log
 import supybot.world as world
 
 import ConfigParser
+import fnmatch
 from functools import wraps
 import os
 import threading
 import time
 import traceback
-import fnmatch
 
 # 'import git' is performed during plugin initialization.
 #
@@ -178,6 +182,7 @@ class Repository(object):
                 log_error("No branch in repository matches: " + option_val)
             return branches
 
+        # pylint: disable=E0602
         if not os.path.exists(self.path):
             git.Git('.').clone(self.url, self.path, no_checkout=True)
         self.repo = git.Repo(self.path)
@@ -206,6 +211,7 @@ class Repository(object):
     @synchronized('lock')
     def get_commit(self, sha):
         "Fetch the commit with the given SHA.  Returns None if not found."
+        # pylint: disable=E0602
         try:
             return self.repo.commit(sha)
         except ValueError:    # 0.1.x
@@ -356,7 +362,7 @@ class Git(callbacks.PluginRegexp):
         self._schedule_next_event()
 
     def init_git_python(self):
-        global GIT_API_VERSION, git
+        global GIT_API_VERSION, git                # pylint: disable=W0602
         try:
             import git
         except ImportError:
