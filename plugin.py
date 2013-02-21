@@ -124,6 +124,80 @@ def _get_commits(repo, first, last):
     return repo.iter_commits(rev)
 
 
+def _format_link(repository, commit):
+    "Return a link to view a given commit, based on config setting."
+    result = ''
+    escaped = False
+    for c in repository.options.commit_link:
+        if escaped:
+            if c == 'c':
+                result += repository.get_commit_id(commit)[0:7]
+            elif c == 'C':
+                result += repository.get_commit_id(commit)
+            else:
+                result += c
+            escaped = False
+        elif c == '%':
+            escaped = True
+        else:
+            result += c
+    return result
+
+
+def _format_message(repository, commit, branch='unknown'):
+    """
+    Generate an formatted message for IRC from the given commit, using
+    the format specified in the config. Returns a list of strings.
+    """
+    MODE_NORMAL = 0
+    MODE_SUBST = 1
+    MODE_COLOR = 2
+    subst = {
+        'a': commit.author.name,
+        'b': branch,
+        'c': repository.get_commit_id(commit)[0:7],
+        'C': repository.get_commit_id(commit),
+        'e': commit.author.email,
+        'l': _format_link(repository, commit),
+        'm': commit.message.split('\n')[0],
+        'n': repository.long_name,
+        's': repository.options.short_name,
+        'S': ' ',
+        'u': repository.options.url,
+        'r': '\x0f',
+        '!': '\x02',
+        '%': '%',
+    }
+    result = []
+    lines = repository.options.commit_msg.split('\n')
+    for line in lines:
+        mode = MODE_NORMAL
+        outline = ''
+        for c in line:
+            if mode == MODE_SUBST:
+                if c in subst.keys():
+                    outline += subst[c]
+                    mode = MODE_NORMAL
+                elif c == '(':
+                    color = ''
+                    mode = MODE_COLOR
+                else:
+                    outline += c
+                    mode = MODE_NORMAL
+            elif mode == MODE_COLOR:
+                if c == ')':
+                    outline += '\x03' + color
+                    mode = MODE_NORMAL
+                else:
+                    color += c
+            elif c == '%':
+                mode = MODE_SUBST
+            else:
+                outline += c
+        result.append(outline.encode('utf-8'))
+    return result
+
+
 class _Options(object):
     ''' Simple container for option values. '''
 
@@ -263,80 +337,6 @@ class _Repository(object):
         return list(self.repo.iter_commits(branch))[:count]
 
     @synchronized('lock')
-    def format_link(self, commit):
-        "Return a link to view a given commit, based on config setting."
-        result = ''
-        escaped = False
-        for c in self.options.commit_link:
-            if escaped:
-                if c == 'c':
-                    result += self.get_commit_id(commit)[0:7]
-                elif c == 'C':
-                    result += self.get_commit_id(commit)
-                else:
-                    result += c
-                escaped = False
-            elif c == '%':
-                escaped = True
-            else:
-                result += c
-        return result
-
-    @synchronized('lock')
-    def format_message(self, commit, branch='unknown'):
-        """
-        Generate an formatted message for IRC from the given commit, using
-        the format specified in the config. Returns a list of strings.
-        """
-        MODE_NORMAL = 0
-        MODE_SUBST = 1
-        MODE_COLOR = 2
-        subst = {
-            'a': commit.author.name,
-            'b': branch,
-            'c': self.get_commit_id(commit)[0:7],
-            'C': self.get_commit_id(commit),
-            'e': commit.author.email,
-            'l': self.format_link(commit),
-            'm': commit.message.split('\n')[0],
-            'n': self.long_name,
-            's': self.options.short_name,
-            'S': ' ',
-            'u': self.options.url,
-            'r': '\x0f',
-            '!': '\x02',
-            '%': '%',
-        }
-        result = []
-        lines = self.options.commit_msg.split('\n')
-        for line in lines:
-            mode = MODE_NORMAL
-            outline = ''
-            for c in line:
-                if mode == MODE_SUBST:
-                    if c in subst.keys():
-                        outline += subst[c]
-                        mode = MODE_NORMAL
-                    elif c == '(':
-                        color = ''
-                        mode = MODE_COLOR
-                    else:
-                        outline += c
-                        mode = MODE_NORMAL
-                elif mode == MODE_COLOR:
-                    if c == ')':
-                        outline += '\x03' + color
-                        mode = MODE_NORMAL
-                    else:
-                        color += c
-                elif c == '%':
-                    mode = MODE_SUBST
-                else:
-                    outline += c
-            result.append(outline.encode('utf-8'))
-        return result
-
-    @synchronized('lock')
     def record_error(self, e):
         "Save the exception 'e' for future error reporting."
         self.errors.append(e)
@@ -402,7 +402,7 @@ class Git(callbacks.PluginRegexp):
                          repository.long_name,
                          )))
         for commit in commits[-commits_at_once:]:
-            lines = repository.format_message(commit, branch)
+            lines = _format_message(repository, commit, branch)
             for line in lines:
                 msg = ircmsgs.privmsg(channel, line)
                 irc.queueMsg(msg)
