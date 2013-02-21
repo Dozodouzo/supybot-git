@@ -52,23 +52,28 @@ _DEBUG = False
 
 
 def log_debug(message):
+    ''' Log a debug message based on local debug config. '''
     if _DEBUG:
         log.info("Git: " + message)
 
 
 def log_info(message):
+    ''' Log a info message using plugin framework. '''
     log.info("Git: " + message)
 
 
 def log_warning(message):
+    ''' Log a warning message using plugin framework. '''
     log.warning("Git: " + message)
 
 
 def log_error(message):
+    ''' Log an error message using plugin framework. '''
     log.error("Git: " + message)
 
 
 def plural(count, singular, plural=None):
+    ''' Return singular/plural form of singular arg depending on count. '''
     if count == 1:
         return singular
     if plural:
@@ -86,9 +91,13 @@ def synchronized(tlockname):
     member variable lock with the given name (e.g. 'lock' ==> self.lock) for
     the duration of the function (blocking).
     """
+
     def _synched(func):
+        ''' Wraps the lock. '''
+
         @wraps(func)
         def _synchronizer(self, *args, **kwargs):
+            ''' Implements the locking. '''
             tlock = self.__getattribute__(tlockname)
             tlock.acquire()
             try:
@@ -96,10 +105,12 @@ def synchronized(tlockname):
             finally:
                 tlock.release()
         return _synchronizer
+
     return _synched
 
 
 def _get_commits(repo, first, last):
+    ''' Return list of commits in repo from first to last, inclusive.'''
     if GIT_API_VERSION == 1:
         return repo.commits_between(first, last)
     elif GIT_API_VERSION == 3:
@@ -221,6 +232,7 @@ class Repository(object):
 
     @synchronized('lock')
     def get_commit_id(self, commit):
+        ''' Return the id i. e., the 40-char git sha. '''
         if GIT_API_VERSION == 1:
             return commit.id
         elif GIT_API_VERSION == 3:
@@ -230,6 +242,10 @@ class Repository(object):
 
     @synchronized('lock')
     def get_new_commits(self):
+        '''
+        Return dict of commits by branch which are more recent then those
+        in self.commit_by_branch
+        '''
         new_commits_by_branch = {}
         for branch in self.commit_by_branch:
             result = _get_commits(self.repo,
@@ -244,6 +260,7 @@ class Repository(object):
 
     @synchronized('lock')
     def get_recent_commits(self, branch, count):
+        ''' Return count top commits for a branch in a repo. '''
         if GIT_API_VERSION == 1:
             return self.repo.commits(start=branch, max_count=count)
         elif GIT_API_VERSION == 3:
@@ -362,6 +379,7 @@ class Git(callbacks.PluginRegexp):
         self._schedule_next_event()
 
     def init_git_python(self):
+        ''' import git and set GIT_API_VERSION. '''
         global GIT_API_VERSION, git                # pylint: disable=W0602
         try:
             import git
@@ -376,6 +394,7 @@ class Git(callbacks.PluginRegexp):
             GIT_API_VERSION = 3
 
     def die(self):
+        ''' Stop all threads.  '''
         self._stop_polling()
         self.__parent.die()
 
@@ -531,6 +550,7 @@ class Git(callbacks.PluginRegexp):
                                            repository, commits_, branch)
 
     def _poll(self):
+        ''' Look for and handle new commits in local copy of repo. '''
         # Note that polling happens in two steps:
         #
         # 1. The GitFetcher class, running its own poll loop, fetches
@@ -580,6 +600,7 @@ class Git(callbacks.PluginRegexp):
             traceback.print_exc(e)
 
     def _read_config(self):
+        ''' Read module config file, normally git.ini. '''
         global _DEBUG
         self.repository_list = []
         _DEBUG = self.registryValue('debug')
@@ -594,6 +615,7 @@ class Git(callbacks.PluginRegexp):
             self.repository_list.append(Repository(repo_dir, section, options))
 
     def _schedule_next_event(self):
+        ''' Schedule next run for gitFetcher. '''
         period = self.registryValue('pollPeriod')
         if period > 0:
             if not self.fetcher or not self.fetcher.isAlive():
@@ -620,7 +642,11 @@ class Git(callbacks.PluginRegexp):
                 break
 
     def _stop_polling(self):
-        # Never allow an exception to propagate since this is called in die()
+        '''
+        Stop  the gitFetcher. Never allow an exception to propagate since
+
+         this is called in die()
+        '''
         if self.fetcher:
             try:
                 self.fetcher.stop()
