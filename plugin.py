@@ -375,7 +375,7 @@ class Git(callbacks.PluginRegexp):
 
     def _read_config(self):
         ''' Read module config file, normally git.ini. '''
-        global _DEBUG
+        global _DEBUG                              # pylint: disable=W0603
         self.repository_list = []
         _DEBUG = self.registryValue('debug')
         repo_dir = self.registryValue('repoDir')
@@ -431,7 +431,7 @@ class Git(callbacks.PluginRegexp):
                 else:
                     name = repository.options.short_name
                     line = "%s pushed %d commit(s) to %s at %s" % (
-                        a, len(commits_), name)
+                        a, len(commits_), branch, name)
                 msg = ircmsgs.privmsg(channel, line)
                 irc.queueMsg(msg)
                 self._display_some_commits(irc, channel,
