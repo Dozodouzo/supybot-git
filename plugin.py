@@ -74,7 +74,7 @@ def log_error(message):
     log.error("Git: " + message)
 
 
-def plural(count, singular, plural=None):
+def _plural(count, singular, plural=None):
     ''' Return singular/plural form of singular arg depending on count. '''
     if count == 1:
         return singular
@@ -146,7 +146,7 @@ class Repository(object):
             if name not in options:
                 raise Exception('Section %s missing required value: %s' %
                         (long_name, name))
-        for name, value in options.items():
+        for name in options.keys():
             if name not in required_values and name not in optional_values:
                 raise Exception('Section %s contains unrecognized value: %s' %
                         (long_name, name))
@@ -365,11 +365,13 @@ class Git(callbacks.PluginRegexp):
     unaddressedRegexps = ['_snarf']
 
     def __init__(self, irc):
+        # pylint: disable=W0233,W0231
         self.init_git_python()
         self.__parent = super(Git, self)
         self.__parent.__init__(irc)
         self.fetcher = None
         self._stop_polling()
+        self.repository_list = []
         try:
             self._read_config()
         except (registry.NonExistentRegistryEntry, ConfigParser.Error) as e:
@@ -452,7 +454,7 @@ class Git(callbacks.PluginRegexp):
         self._schedule_next_event()
         n = len(self.repository_list)
         irc.reply('Git reinitialized with %d %s.' %
-                      (n, plural(n, 'repository')))
+                      (n, _plural(n, 'repository')))
 
     rehash = wrap(rehash, [])
 
@@ -500,7 +502,7 @@ class Git(callbacks.PluginRegexp):
         irc.reply('"shortlog" is obsolete, please use "log".')
 
     # Overridden to hide the obsolete commands
-    def listCommands(self, pluginCommands=[]):
+    def listCommands(self, pluginCommands=None):
         return ['repolog', 'rehash', 'repositories', 'branches']
 
     def _display_some_commits(self, irc, channel,
