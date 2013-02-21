@@ -365,10 +365,153 @@ class Git(callbacks.PluginRegexp):
                 log_warning(str(e))
         self._schedule_next_event()
 
-    def die(self):
-        ''' Stop all threads.  '''
-        self._stop_polling()
-        self.__parent.die()
+    def _read_config(self):
+        ''' Read module config file, normally git.ini. '''
+        global _DEBUG
+        self.repository_list = []
+        _DEBUG = self.registryValue('debug')
+        repo_dir = self.registryValue('repoDir')
+        config = self.registryValue('configFile')
+        if not os.access(config, os.R_OK):
+            raise Exception('Cannot access configuration file: %s' % config)
+        parser = ConfigParser.RawConfigParser()
+        parser.read(config)
+        for section in parser.sections():
+            options = dict(parser.items(section))
+            self.repository_list.append(Repository(repo_dir, section, options))
+
+    def _display_some_commits(self, irc, channel,
+                              repository, commits, branch):
+        "Display a nicely-formatted list of commits for an author/branch."
+        commits = list(commits)
+        commits_at_once = self.registryValue('maxCommitsAtOnce')
+        if len(commits) > commits_at_once:
+            irc.queueMsg(ircmsgs.privmsg(channel,
+                         "Showing latest %d of %d commits to %s..." % (
+                         commits_at_once,
+                         len(commits),
+                         repository.long_name,
+                         )))
+        for commit in commits[-commits_at_once:]:
+            lines = repository.format_message(commit, branch)
+            for line in lines:
+                msg = ircmsgs.privmsg(channel, line)
+                irc.queueMsg(msg)
+
+    def _display_commits(self, irc, channel,
+                         repository, commits_by_branch, ctx='commits'):
+        "Display a nicely-formatted list of commits in a channel."
+
+        if not commits_by_branch:
+            return
+        if not isinstance(commits_by_branch, dict):
+            commits_by_branch = {'': commits_by_branch}
+        for branch, commits in commits_by_branch.iteritems():
+            if not isinstance(commits, list):
+                commits_by_branch[branch] = [commits]
+
+        for branch, commits in commits_by_branch.iteritems():
+            for a in set([c.author.name for c in commits]):
+                commits_ = [c for c in commits if c.author.name == a]
+                if not repository.group_header or ctx == 'repolog':
+                    self._display_some_commits(irc, channel,
+                                               repository, commits_, branch)
+                    continue
+                if ctx == 'snarf':
+                    line = "Talking about %s?" % \
+                                repository.get_commit_id(commits_[0])[0:7]
+                else:
+                    line = "%s pushed %d commit(s) to %s at %s" % (
+                        a, len(commits_), branch, repository.short_name)
+                msg = ircmsgs.privmsg(channel, line)
+                irc.queueMsg(msg)
+                self._display_some_commits(irc, channel,
+                                           repository, commits_, branch)
+
+    def _schedule_next_event(self):
+        ''' Schedule next run for gitFetcher. '''
+        period = self.registryValue('pollPeriod')
+        if period > 0:
+            if not self.fetcher or not self.fetcher.isAlive():
+                self.fetcher = GitFetcher(self.repository_list, period)
+                self.fetcher.start()
+            schedule.addEvent(self._poll, time.time() + period,
+                              name=self.name())
+        else:
+            self._stop_polling()
+
+    def _poll_repository(self, repository, targets):
+        ''' Perform poll of a repo, display changes. '''
+        # Manual non-blocking lock calls here to avoid potentially long
+        # waits (if it fails, hope for better luck in the next _poll).
+        if repository.lock.acquire(blocking=False):
+            try:
+                errors = repository.get_errors()
+                for e in errors:
+                    log_error('Unable to fetch %s: %s' %
+                        (repository.long_name, str(e)))
+                new_commits_by_branch = repository.get_new_commits()
+                for irc, channel in targets:
+                    self._display_commits(irc, channel, repository,
+                                          new_commits_by_branch)
+                for branch in new_commits_by_branch:
+                    repository.commit_by_branch[branch] = \
+                       repository.get_commit(branch)
+            except GitCommandError as e:
+                log_error('Exception in _poll repository %s: %s' %
+                        (repository.short_name, str(e)))
+            finally:
+                repository.lock.release()
+        else:
+            log.info('Postponing repository read: %s: Locked.' %
+                repository.long_name)
+
+    def _poll(self):
+        ''' Look for and handle new commits in local copy of repo. '''
+        # Note that polling happens in two steps:
+        #
+        # 1. The GitFetcher class, running its own poll loop, fetches
+        #    repositories to keep the local copies up to date.
+        # 2. This _poll occurs, and looks for new commits in those local
+        #    copies.  (Therefore this function should be quick. If it is
+        #    slow, it may block the entire bot.)
+        for repository in self.repository_list:
+            # Find the IRC/channel pairs to notify
+            targets = []
+            for irc in world.ircs:
+                for channel in repository.channels:
+                    if channel in irc.state.channels:
+                        targets.append((irc, channel))
+            if not targets:
+                log_info("Skipping %s: not in configured channel(s)." %
+                         repository.long_name)
+                continue
+            try:
+                self._poll_repository(repository, targets)
+            except Exception, e:                        # pylint: disable=W0703
+                log_error('Exception in _poll(): %s' % str(e))
+                traceback.print_exc(e)
+        self._schedule_next_event()
+
+    def _stop_polling(self):
+        '''
+        Stop  the gitFetcher. Never allow an exception to propagate since
+        this is called in die()
+        '''
+        # pylint: disable=W0703
+        if self.fetcher:
+            try:
+                self.fetcher.stop()
+                self.fetcher.join()    # This might take time, but it's safest.
+            except Exception, e:
+                log_error('Stopping fetcher: %s' % str(e))
+            self.fetcher = None
+        try:
+            schedule.removeEvent(self.name())
+        except KeyError:
+            pass
+        except Exception, e:
+            log_error('Stopping scheduled task: %s' % str(e))
 
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
@@ -385,6 +528,26 @@ class Git(callbacks.PluginRegexp):
             irc.reply('Sorry, not allowed in this channel.')
             return None
         return repository
+
+    def _snarf(self, irc, msg, match):
+        r"""\b(?P<sha>[0-9a-f]{6,40})\b"""
+        if not self.registryValue('enableSnarf'):
+            return
+        sha = match.group('sha')
+        channel = msg.args[0]
+        repositories = filter(lambda r: channel in r.channels,
+                              self.repository_list)
+        for repository in repositories:
+            commit = repository.get_commit(sha)
+            if commit:
+                self._display_commits(irc, channel,
+                                      repository, commit, 'snarf')
+                break
+
+    def die(self):
+        ''' Stop all threads.  '''
+        self._stop_polling()
+        self.__parent.die()
 
     def repolog(self, irc, msg, args, channel, repo, branch, count):
         """ repo [branch [count]]
@@ -467,174 +630,11 @@ class Git(callbacks.PluginRegexp):
 
     def shortlog(self, irc, msg, args):
         "Obsolete command, remove this function eventually."
-        irc.reply('"shortlog" is obsolete, please use "log".')
+        irc.reply('"shortlog" is obsolete, please use "repolog".')
 
     # Overridden to hide the obsolete commands
     def listCommands(self, pluginCommands=None):
         return ['repolog', 'rehash', 'repositories', 'branches']
-
-    def _display_some_commits(self, irc, channel,
-                              repository, commits, branch):
-        "Display a nicely-formatted list of commits for an author/branch."
-        commits = list(commits)
-        commits_at_once = self.registryValue('maxCommitsAtOnce')
-        if len(commits) > commits_at_once:
-            irc.queueMsg(ircmsgs.privmsg(channel,
-                         "Showing latest %d of %d commits to %s..." % (
-                         commits_at_once,
-                         len(commits),
-                         repository.long_name,
-                         )))
-        for commit in commits[-commits_at_once:]:
-            lines = repository.format_message(commit, branch)
-            for line in lines:
-                msg = ircmsgs.privmsg(channel, line)
-                irc.queueMsg(msg)
-
-    def _display_commits(self, irc, channel,
-                         repository, commits_by_branch, ctx='commits'):
-        "Display a nicely-formatted list of commits in a channel."
-
-        if not commits_by_branch:
-            return
-        if not isinstance(commits_by_branch, dict):
-            commits_by_branch = {'': commits_by_branch}
-        for branch, commits in commits_by_branch.iteritems():
-            if not isinstance(commits, list):
-                commits_by_branch[branch] = [commits]
-
-        for branch, commits in commits_by_branch.iteritems():
-            for a in set([c.author.name for c in commits]):
-                commits_ = [c for c in commits if c.author.name == a]
-                if not repository.group_header or ctx == 'repolog':
-                    self._display_some_commits(irc, channel,
-                                               repository, commits_, branch)
-                    continue
-                if ctx == 'snarf':
-                    line = "Talking about %s?" % \
-                                repository.get_commit_id(commits_[0])[0:7]
-                else:
-                    line = "%s pushed %d commit(s) to %s at %s" % (
-                        a, len(commits_), branch, repository.short_name)
-                msg = ircmsgs.privmsg(channel, line)
-                irc.queueMsg(msg)
-                self._display_some_commits(irc, channel,
-                                           repository, commits_, branch)
-
-    def _poll_repository(self, repository, targets):
-        ''' Perform poll of a repo, display changes. '''
-        # Manual non-blocking lock calls here to avoid potentially long
-        # waits (if it fails, hope for better luck in the next _poll).
-        if repository.lock.acquire(blocking=False):
-            try:
-                errors = repository.get_errors()
-                for e in errors:
-                    log_error('Unable to fetch %s: %s' %
-                        (repository.long_name, str(e)))
-                new_commits_by_branch = repository.get_new_commits()
-                for irc, channel in targets:
-                    self._display_commits(irc, channel, repository,
-                                          new_commits_by_branch)
-                for branch in new_commits_by_branch:
-                    repository.commit_by_branch[branch] = \
-                       repository.get_commit(branch)
-            except GitCommandError as e:
-                log_error('Exception in _poll repository %s: %s' %
-                        (repository.short_name, str(e)))
-            finally:
-                repository.lock.release()
-        else:
-            log.info('Postponing repository read: %s: Locked.' %
-                repository.long_name)
-
-    def _poll(self):
-        ''' Look for and handle new commits in local copy of repo. '''
-        # Note that polling happens in two steps:
-        #
-        # 1. The GitFetcher class, running its own poll loop, fetches
-        #    repositories to keep the local copies up to date.
-        # 2. This _poll occurs, and looks for new commits in those local
-        #    copies.  (Therefore this function should be quick. If it is
-        #    slow, it may block the entire bot.)
-        for repository in self.repository_list:
-            # Find the IRC/channel pairs to notify
-            targets = []
-            for irc in world.ircs:
-                for channel in repository.channels:
-                    if channel in irc.state.channels:
-                        targets.append((irc, channel))
-            if not targets:
-                log_info("Skipping %s: not in configured channel(s)." %
-                         repository.long_name)
-                continue
-            try:
-                self._poll_repository(repository, targets)
-            except Exception, e:                        # pylint: disable=W0703
-                log_error('Exception in _poll(): %s' % str(e))
-                traceback.print_exc(e)
-        self._schedule_next_event()
-
-    def _read_config(self):
-        ''' Read module config file, normally git.ini. '''
-        global _DEBUG
-        self.repository_list = []
-        _DEBUG = self.registryValue('debug')
-        repo_dir = self.registryValue('repoDir')
-        config = self.registryValue('configFile')
-        if not os.access(config, os.R_OK):
-            raise Exception('Cannot access configuration file: %s' % config)
-        parser = ConfigParser.RawConfigParser()
-        parser.read(config)
-        for section in parser.sections():
-            options = dict(parser.items(section))
-            self.repository_list.append(Repository(repo_dir, section, options))
-
-    def _schedule_next_event(self):
-        ''' Schedule next run for gitFetcher. '''
-        period = self.registryValue('pollPeriod')
-        if period > 0:
-            if not self.fetcher or not self.fetcher.isAlive():
-                self.fetcher = GitFetcher(self.repository_list, period)
-                self.fetcher.start()
-            schedule.addEvent(self._poll, time.time() + period,
-                              name=self.name())
-        else:
-            self._stop_polling()
-
-    def _snarf(self, irc, msg, match):
-        r"""\b(?P<sha>[0-9a-f]{6,40})\b"""
-        if not self.registryValue('enableSnarf'):
-            return
-        sha = match.group('sha')
-        channel = msg.args[0]
-        repositories = filter(lambda r: channel in r.channels,
-                              self.repository_list)
-        for repository in repositories:
-            commit = repository.get_commit(sha)
-            if commit:
-                self._display_commits(irc, channel,
-                                      repository, commit, 'snarf')
-                break
-
-    def _stop_polling(self):
-        '''
-        Stop  the gitFetcher. Never allow an exception to propagate since
-        this is called in die()
-        '''
-        # pylint: disable=W0703
-        if self.fetcher:
-            try:
-                self.fetcher.stop()
-                self.fetcher.join()    # This might take time, but it's safest.
-            except Exception, e:
-                log_error('Stopping fetcher: %s' % str(e))
-            self.fetcher = None
-        try:
-            schedule.removeEvent(self.name())
-        except KeyError:
-            pass
-        except Exception, e:
-            log_error('Stopping scheduled task: %s' % str(e))
 
 
 class GitFetcher(threading.Thread):
@@ -690,6 +690,8 @@ class GitFetcher(threading.Thread):
                 time.sleep(GitFetcher.SHUTDOWN_CHECK_PERIOD)
             end_time = time.time() + self.period
 
+
 Class = Git
+
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
