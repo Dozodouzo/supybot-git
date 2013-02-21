@@ -177,9 +177,9 @@ class Repository(object):
         def get_branches(option_val, repo):
             ''' Return list of branches matching users's option_val. '''
             opt_branches = [b.strip() for b in option_val.split()]
-            repo.remotes[0].update()
+            repo.remote().update()
             repo_branches = [r.name.split('/')[1]
-                for r in repo.remotes[0].refs if r.is_detached]
+                for r in repo.remote().refs if r.is_detached]
             branches = []
             for opt in opt_branches:
                 matched = fnmatch.filter(repo_branches, opt)
@@ -210,7 +210,7 @@ class Repository(object):
     @synchronized('lock')
     def fetch(self):
         "Contact git repository and update branches appropriately."
-        self.repo.remotes[0].update()
+        self.repo.remote().update()
         for branch in self.branches:
             if str(self.repo.active_branch) == branch:
                 self.repo.remote().pull(branch)
