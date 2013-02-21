@@ -76,8 +76,8 @@ Let's break down the possible settings:
   information about the repository. All interaction with the repository is
   limited to these channels.
 
-* `branches`: *Optional.* Space-separated list fo branches to follow for 
-   this repository. Accepts wildcards, '*' means all branches, 'release*' 
+* `branches`: *Optional.* Space-separated list fo branches to follow for
+   this repository. Accepts wildcards, '*' means all branches, 'release*'
    all branches beginnning with 'release'. Default: master
 
 * `commit link`: *Optional.* A format string describing how to link to a
@@ -213,5 +213,11 @@ Static checking
 pep8:
 
   $ pep8 --config pep8.conf . > pep8.log
+
+pylint:
+
+  $ pylint --rcfile pylint.conf plugin.py __init__.py config.py > pylint.log
+
+
 
 

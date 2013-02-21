@@ -32,6 +32,8 @@
 Provides Git integration capabilities.
 """
 
+# pylint: disable=C0103
+
 import supybot
 import supybot.world as world
 

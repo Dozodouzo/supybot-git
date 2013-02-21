@@ -24,11 +24,8 @@
 A Supybot plugin that monitors and interacts with git repositories.
 """
 
-import supybot.utils as utils
 from supybot.commands import *
-import supybot.plugins as plugins
 import supybot.ircmsgs as ircmsgs
-import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
 import supybot.schedule as schedule
 import supybot.log as log
@@ -337,6 +334,7 @@ class Repository(object):
 
 class Git(callbacks.PluginRegexp):
     "Please see the README file to configure and use this plugin."
+    # pylint: disable=R0904
 
     threaded = True
     unaddressedRegexps = ['_snarf']
@@ -399,7 +397,7 @@ class Git(callbacks.PluginRegexp):
         """
         repository = self._parse_repo(irc, msg, repo, channel)
         if not repository:
-           return
+            return
         if not branch in repository.branches:
             irc.reply('No such branch being watched: ' + branch)
             irc.reply('Available branches: ' +
