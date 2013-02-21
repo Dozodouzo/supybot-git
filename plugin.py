@@ -349,6 +349,60 @@ class _Repository(object):
         return result
 
 
+class _GitFetcher(threading.Thread):
+    "A thread object to perform long-running Git operations."
+
+    # I don't know of any way to shut down a thread except to have it
+    # check a variable very frequently.
+    SHUTDOWN_CHECK_PERIOD = 0.1     # Seconds
+
+    # TODO: Wrap git fetch command and enforce a timeout.  Git will probably
+    # timeout on its own in most cases, but I have actually seen it hang
+    # forever on "fetch" before.
+
+    def __init__(self, repositories, period, *args, **kwargs):
+        """
+        Takes a list of repositories and a period (in seconds) to poll them.
+        As long as it is running, the repositories will be kept up to date
+        every period seconds (with a git fetch).
+        """
+        super(_GitFetcher, self).__init__(*args, **kwargs)
+        self.repository_list = repositories
+        self.period = period * 1.1        # Hacky attempt to avoid resonance
+        self.shutdown = False
+
+    def stop(self):
+        """
+        Shut down the thread as soon as possible. May take some time if
+        inside a long-running fetch operation.
+        """
+        self.shutdown = True
+
+    def run(self):
+        "The main thread method."
+        # Initially wait for half the period to stagger this thread and
+        # the main thread and avoid lock contention.
+        end_time = time.time() + self.period / 2
+        while not self.shutdown:
+            for repository in self.repository_list:
+                if self.shutdown:
+                    break
+                if repository.lock.acquire(blocking=False):
+                    try:
+                        repository.fetch()
+                    except GitCommandError as e:
+                        repository.record_error(e)
+                    finally:
+                        repository.lock.release()
+                else:
+                    log_info('Postponing repository fetch: %s: Locked.' %
+                             repository.long_name)
+            # Wait for the next periodic check
+            while not self.shutdown and time.time() < end_time:
+                time.sleep(_GitFetcher.SHUTDOWN_CHECK_PERIOD)
+            end_time = time.time() + self.period
+
+
 class Git(callbacks.PluginRegexp):
     "Please see the README file to configure and use this plugin."
     # pylint: disable=R0904
@@ -443,7 +497,7 @@ class Git(callbacks.PluginRegexp):
         period = self.registryValue('pollPeriod')
         if period > 0:
             if not self.fetcher or not self.fetcher.isAlive():
-                self.fetcher = GitFetcher(self.repository_list, period)
+                self.fetcher = _GitFetcher(self.repository_list, period)
                 self.fetcher.start()
             schedule.addEvent(self._poll, time.time() + period,
                               name=self.name())
@@ -480,7 +534,7 @@ class Git(callbacks.PluginRegexp):
         ''' Look for and handle new commits in local copy of repo. '''
         # Note that polling happens in two steps:
         #
-        # 1. The GitFetcher class, running its own poll loop, fetches
+        # 1. The _GitFetcher class, running its own poll loop, fetches
         #    repositories to keep the local copies up to date.
         # 2. This _poll occurs, and looks for new commits in those local
         #    copies.  (Therefore this function should be quick. If it is
@@ -646,60 +700,6 @@ class Git(callbacks.PluginRegexp):
     # Overridden to hide the obsolete commands
     def listCommands(self, pluginCommands=None):
         return ['repolog', 'rehash', 'repositories', 'branches']
-
-
-class GitFetcher(threading.Thread):
-    "A thread object to perform long-running Git operations."
-
-    # I don't know of any way to shut down a thread except to have it
-    # check a variable very frequently.
-    SHUTDOWN_CHECK_PERIOD = 0.1     # Seconds
-
-    # TODO: Wrap git fetch command and enforce a timeout.  Git will probably
-    # timeout on its own in most cases, but I have actually seen it hang
-    # forever on "fetch" before.
-
-    def __init__(self, repositories, period, *args, **kwargs):
-        """
-        Takes a list of repositories and a period (in seconds) to poll them.
-        As long as it is running, the repositories will be kept up to date
-        every period seconds (with a git fetch).
-        """
-        super(GitFetcher, self).__init__(*args, **kwargs)
-        self.repository_list = repositories
-        self.period = period * 1.1        # Hacky attempt to avoid resonance
-        self.shutdown = False
-
-    def stop(self):
-        """
-        Shut down the thread as soon as possible. May take some time if
-        inside a long-running fetch operation.
-        """
-        self.shutdown = True
-
-    def run(self):
-        "The main thread method."
-        # Initially wait for half the period to stagger this thread and
-        # the main thread and avoid lock contention.
-        end_time = time.time() + self.period / 2
-        while not self.shutdown:
-            for repository in self.repository_list:
-                if self.shutdown:
-                    break
-                if repository.lock.acquire(blocking=False):
-                    try:
-                        repository.fetch()
-                    except GitCommandError as e:
-                        repository.record_error(e)
-                    finally:
-                        repository.lock.release()
-                else:
-                    log_info('Postponing repository fetch: %s: Locked.' %
-                             repository.long_name)
-            # Wait for the next periodic check
-            while not self.shutdown and time.time() < end_time:
-                time.sleep(GitFetcher.SHUTDOWN_CHECK_PERIOD)
-            end_time = time.time() + self.period
 
 
 Class = Git
