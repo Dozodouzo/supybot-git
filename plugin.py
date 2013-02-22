@@ -257,6 +257,8 @@ class _Repository(object):
 
         def get_branches(option_val, repo):
             ''' Return list of branches matching users's option_val. '''
+            if 'MOCK_TEST_BRANCHES' in os.environ:
+                return os.environ['MOCK_TEST_BRANCHES'].split()
             opt_branches = [b.strip() for b in option_val.split()]
             repo.remote().update()
             repo_branches = [r.name.split('/')[1]
@@ -446,16 +448,7 @@ class Git(callbacks.PluginRegexp):
     def _display_some_commits(self, irc, channel,
                               repository, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
-        commits = list(commits)
-        commits_at_once = self.registryValue('maxCommitsAtOnce')
-        if len(commits) > commits_at_once:
-            irc.queueMsg(ircmsgs.privmsg(channel,
-                         "Showing latest %d of %d commits to %s..." % (
-                         commits_at_once,
-                         len(commits),
-                         repository.long_name,
-                         )))
-        for commit in commits[-commits_at_once:]:
+        for commit in commits:
             lines = _format_message(repository, commit, branch)
             for line in lines:
                 msg = ircmsgs.privmsg(channel, line)
@@ -467,15 +460,25 @@ class Git(callbacks.PluginRegexp):
 
         if not commits_by_branch:
             return
-        if not isinstance(commits_by_branch, dict):
-            commits_by_branch = {'': commits_by_branch}
-        for branch, commits in commits_by_branch.iteritems():
-            if not isinstance(commits, list):
-                commits_by_branch[branch] = [commits]
+
+        all_commits = []
+        for key in commits_by_branch.keys():
+            all_commits.extend(commits_by_branch[key])
+        all_commits = sorted(all_commits, key = lambda c: c.committed_date)
+        commits_at_once = self.registryValue('maxCommitsAtOnce')
+        if len(all_commits) > commits_at_once:
+            irc.queueMsg(ircmsgs.privmsg(channel,
+                         "Showing latest %d of %d commits to %s..." % (
+                         commits_at_once,
+                         len(all_commits),
+                         repository.long_name,
+                         )))
+        all_commits = all_commits[-commits_at_once:]
 
         for branch, commits in commits_by_branch.iteritems():
             for a in set([c.author.name for c in commits]):
-                commits_ = [c for c in commits if c.author.name == a]
+                commits_ = [c for c in commits
+                               if c.author.name == a and c in all_commits]
                 if not repository.options.group_header or ctx == 'repolog':
                     self._display_some_commits(irc, channel,
                                                repository, commits_, branch)
@@ -605,8 +608,9 @@ class Git(callbacks.PluginRegexp):
         for repository in repositories:
             commit = repository.get_commit(sha)
             if commit:
+                commits = {'unknown': [commit]}
                 self._display_commits(irc, channel,
-                                      repository, commit, 'snarf')
+                                      repository, commits, 'snarf')
                 break
 
     def die(self):
@@ -630,7 +634,8 @@ class Git(callbacks.PluginRegexp):
             return
         branch_head = repository.get_commit(branch)
         commits = repository.get_recent_commits(branch_head, count)[::-1]
-        self._display_commits(irc, channel, repository, commits, 'repolog')
+        self._display_commits(
+            irc, channel, repository, {branch: commits}, 'repolog')
 
     repolog = wrap(repolog, ['channel',
                              'somethingWithoutSpaces',
