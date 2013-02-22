@@ -54,29 +54,6 @@ if not int(git.__version__[2]) == 3:
     raise Exception("Unsupported GitPython version: " + git.__version__[2])
 from git import GitCommandError
 
-_DEBUG = False
-
-
-def log_debug(message):
-    ''' Log a debug message based on local debug config. '''
-    if _DEBUG:
-        log.info("Git: " + message)
-
-
-def log_info(message):
-    ''' Log a info message using plugin framework. '''
-    log.info("Git: " + message)
-
-
-def log_warning(message):
-    ''' Log a warning message using plugin framework. '''
-    log.warning("Git: " + message)
-
-
-def log_error(message):
-    ''' Log an error message using plugin framework. '''
-    log.error("Git: " + message)
-
 
 def _plural(count, singular, plural=None):
     ''' Return singular/plural form of singular arg depending on count. '''
@@ -233,11 +210,12 @@ class _Options(object):
 class _Repository(object):
     "Represents a git repository being monitored."
 
-    def __init__(self, repo_dir, long_name, options):
+    def __init__(self, log_, repo_dir, long_name, options):
         """
         Initialize with a repository with the given name and dict of options
         from the config section.
         """
+        self.log = log
         self.long_name = long_name
         self.options = _Options(options, long_name)
         self.commit_by_branch = {}
@@ -267,11 +245,12 @@ class _Repository(object):
             for opt in opt_branches:
                 matched = fnmatch.filter(repo_branches, opt)
                 if not matched:
-                    log_warning("No branch in repository matches " + opt)
+                    self.log.warning("No branch in repository matches " + opt)
                 else:
                     branches.extend(matched)
             if not branches:
-                log_error("No branch in repository matches: " + option_val)
+                self.log.error("No branch in repository matches: " +
+                               option_val)
             return branches
 
         # pylint: disable=E0602
@@ -287,7 +266,7 @@ class _Repository(object):
                     self.repo.remote().fetch(branch + ':' + branch)
                 self.commit_by_branch[branch] = self.repo.commit(branch)
             except GitCommandError:
-                log_error("Cannot checkout repo branch: " + branch)
+                self.log.error("Cannot checkout repo branch: " + branch)
 
     branches = property(lambda self: self.commit_by_branch.keys())
 
@@ -328,9 +307,9 @@ class _Repository(object):
                                   branch)
             results = list(result)
             new_commits_by_branch[branch] = results
-            log_debug("Poll: branch: %s last commit: %s, %d commits" %
-                          (branch, str(self.commit_by_branch[branch])[:7],
-                                       len(results)))
+            self.log.debug("Poll: branch: %s last commit: %s, %d commits" %
+                           (branch, str(self.commit_by_branch[branch])[:7],
+                                        len(results)))
         return new_commits_by_branch
 
     @synchronized('lock')
@@ -362,7 +341,7 @@ class _GitFetcher(threading.Thread):
     # timeout on its own in most cases, but I have actually seen it hang
     # forever on "fetch" before.
 
-    def __init__(self, repositories, period, *args, **kwargs):
+    def __init__(self, log_, repositories, period, *args, **kwargs):
         """
         Takes a list of repositories and a period (in seconds) to poll them.
         As long as it is running, the repositories will be kept up to date
@@ -372,6 +351,7 @@ class _GitFetcher(threading.Thread):
         self.repository_list = repositories
         self.period = period * 1.1        # Hacky attempt to avoid resonance
         self.shutdown = False
+        self.log = log_
 
     def stop(self):
         """
@@ -397,8 +377,9 @@ class _GitFetcher(threading.Thread):
                     finally:
                         repository.lock.release()
                 else:
-                    log_info('Postponing repository fetch: %s: Locked.' %
-                             repository.long_name)
+                    self.log.info(
+                        'Postponing repository fetch: %s: Locked.' %
+                        repository.long_name)
             # Wait for the next periodic check
             while not self.shutdown and time.time() < end_time:
                 time.sleep(_GitFetcher.SHUTDOWN_CHECK_PERIOD)
@@ -426,14 +407,12 @@ class Git(callbacks.PluginRegexp):
                 irc.reply('Warning: %s' % str(e))
             else:
                 # During bot startup, there is no one to reply to.
-                log_warning(str(e))
+                self.log.warning(str(e))
         self._schedule_next_event()
 
     def _read_config(self):
         ''' Read module config file, normally git.ini. '''
-        global _DEBUG                              # pylint: disable=W0603
         self.repository_list = []
-        _DEBUG = self.registryValue('debug')
         repo_dir = self.registryValue('repoDir')
         config = self.registryValue('configFile')
         if not os.access(config, os.R_OK):
@@ -443,7 +422,7 @@ class Git(callbacks.PluginRegexp):
         for section in parser.sections():
             options = dict(parser.items(section))
             self.repository_list.append(
-                                _Repository(repo_dir, section, options))
+                           _Repository(self.log, repo_dir, section, options))
 
     def _display_some_commits(self, irc, channel,
                               repository, commits, branch):
@@ -500,7 +479,8 @@ class Git(callbacks.PluginRegexp):
         period = self.registryValue('pollPeriod')
         if period > 0:
             if not self.fetcher or not self.fetcher.isAlive():
-                self.fetcher = _GitFetcher(self.repository_list, period)
+                self.fetcher = _GitFetcher(
+                                    self.log, self.repository_list, period)
                 self.fetcher.start()
             schedule.addEvent(self._poll, time.time() + period,
                               name=self.name())
@@ -515,7 +495,7 @@ class Git(callbacks.PluginRegexp):
             try:
                 errors = repository.get_errors()
                 for e in errors:
-                    log_error('Unable to fetch %s: %s' %
+                    self.log.error('Unable to fetch %s: %s' %
                         (repository.long_name, str(e)))
                 new_commits_by_branch = repository.get_new_commits()
                 for irc, channel in targets:
@@ -525,8 +505,8 @@ class Git(callbacks.PluginRegexp):
                     repository.commit_by_branch[branch] = \
                        repository.get_commit(branch)
             except GitCommandError as e:
-                log_error('Exception in _poll repository %s: %s' %
-                        (repository.options.short_name, str(e)))
+                self.log.error('Exception in _poll repository %s: %s' %
+                    (repository.options.short_name, str(e)))
             finally:
                 repository.lock.release()
         else:
@@ -550,13 +530,14 @@ class Git(callbacks.PluginRegexp):
                     if channel in irc.state.channels:
                         targets.append((irc, channel))
             if not targets:
-                log_info("Skipping %s: not in configured channel(s)." %
-                         repository.long_name)
+                self.log.info("Skipping %s: not in configured channel(s)." %
+                              repository.long_name)
                 continue
             try:
                 self._poll_repository(repository, targets)
             except Exception, e:                        # pylint: disable=W0703
-                log_error('Exception in _poll(): %s' % str(e))
+                self.log.error('Exception in _poll():' + str(e),
+                                exc_info=True)
                 traceback.print_exc(e)
         self._schedule_next_event()
 
@@ -571,14 +552,16 @@ class Git(callbacks.PluginRegexp):
                 self.fetcher.stop()
                 self.fetcher.join()    # This might take time, but it's safest.
             except Exception, e:
-                log_error('Stopping fetcher: %s' % str(e))
+                self.log.error('Stopping fetcher: %s' % str(e),
+                               exc_info=True)
             self.fetcher = None
         try:
             schedule.removeEvent(self.name())
         except KeyError:
             pass
         except Exception, e:
-            log_error('Stopping scheduled task: %s' % str(e))
+            self.log.error('Stopping scheduled task: %s' % str(e),
+                            exc_info=True)
 
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """

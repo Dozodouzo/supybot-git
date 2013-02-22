@@ -58,9 +58,6 @@ conf.registerGlobalValue(Git, 'maxCommitsAtOnce',
     registry.NonNegativeInteger(5, """How many commits are displayed at
         once from each repository."""))
 
-conf.registerGlobalValue(Git, 'debug',
-    registry.Boolean(False, """Add some extra debug output."""))
-
 conf.registerGlobalValue(Git, 'enableSnarf',
     registry.Boolean(True, "Enable snarf i. e., that the bot displays"
                            " commit if a sha is found in the channel"
