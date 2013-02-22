@@ -18,6 +18,15 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+# Unused wildcard imports:
+# pylint: disable=W0614,W0401
+# Missing docstrings:
+# pylint: disable=C0111
+# supybot's typenames are irregular
+# pylint: disable=C0103
+# Too many public methods:
+# pylint: disable=R0904
+
 from supybot.test import *
 from supybot import conf
 
@@ -68,16 +77,16 @@ assert GIT_API_VERSION == 3, 'Tests only run against GitPython 0.3.x+ API.'
 class PluginTestCaseUtilMixin(object):
     "Some additional utilities used in this plugin's tests."
 
-    def _feedMsgLoop(self, query, timeout=None, **kwargs):
+    def _feedMsgLoop(self, query, timeout_=None, **kwargs):
         "Send a message and wait for a list of responses instead of just one."
-        if timeout is None:
-            timeout = LOOP_TIMEOUT
+        if timeout_ is None:
+            timeout_ = LOOP_TIMEOUT
         responses = []
         start = time.time()
-        r = self._feedMsg(query, timeout=timeout, **kwargs)
+        r = self._feedMsg(query, timeout=timeout_, **kwargs)
         # Sleep off remaining time, then start sending empty queries until
         # the replies stop coming.
-        remainder = timeout - (time.time() - start)
+        remainder = timeout_ - (time.time() - start)
         time.sleep(remainder if remainder > 0 else 0)
         query = conf.supybot.reply.whenAddressedBy.chars()[0]
         while r:
@@ -98,7 +107,11 @@ class PluginTestCaseUtilMixin(object):
 class GitRehashTest(PluginTestCase):
     plugins = ('Git',)
 
-    def setUp(self):
+    def setUp(self, nick='test'):
+        self._metamock = patch('git.Repo')
+        self.Repo = self._metamock.__enter__()
+        self.Repo.return_value = self.Repo
+        self.Repo.iter_commits.return_value = COMMITS
         super(GitRehashTest, self).setUp()
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
 
@@ -107,6 +120,7 @@ class GitRehashTest(PluginTestCase):
         self.assertResponse('rehash', 'Git reinitialized with 0 repositories.')
 
     def testRehashOne(self):
+        self._metamock = patch('__builtin__.list')
         conf.supybot.plugins.Git.configFile.setValue(DATA_DIR + '/one.ini')
         self.assertResponse('rehash', 'Git reinitialized with 1 repository.')
 
@@ -116,6 +130,8 @@ class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     plugins = ('Git',)
 
     def setUp(self):
+        self._metamock = patch('git.Repo')
+        self.Repo = self._metamock.__enter__()
         super(GitRepositoryListTest, self).setUp()
         ini = os.path.join(DATA_DIR, 'multi-channel.ini')
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
@@ -124,8 +140,8 @@ class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
 
     def testRepositoryList(self):
         expected = [
-            '\x02test1\x02 (Test Repository 1, branch: master)',
-            '\x02test2\x02 (Test Repository 2, branch: feature)',
+            '\x02test1\x02 (Test Repository 1)',
+            '\x02test2\x02 (Test Repository 2)',
         ]
         self.assertResponses('repositories', expected)
 
@@ -135,8 +151,11 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     plugins = ('Git',)
 
     def setUp(self):
+        self._metamock = patch('git.Repo')
+        self.Repo = self._metamock.__enter__()
         super(GitNoAccessTest, self).setUp()
         ini = os.path.join(DATA_DIR, 'multi-channel.ini')
+        conf.supybot.plugins.Git.pollPeriod.setValue(0)
         conf.supybot.plugins.Git.configFile.setValue(ini)
         self.assertResponse('rehash', 'Git reinitialized with 3 repositories.')
 
@@ -146,7 +165,7 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
 
     def testLogNoAccess(self):
         expected = ['Sorry, not allowed in this channel.']
-        self.assertResponses('log test1', expected)
+        self.assertResponses('repolog test1', expected)
 
 
 class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -154,11 +173,23 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     plugins = ('Git',)
 
     def setUp(self):
-        super(GitLogTest, self).setUp()
         self._metamock = patch('git.Repo')
         self.Repo = self._metamock.__enter__()
         self.Repo.return_value = self.Repo
         self.Repo.iter_commits.return_value = COMMITS
+        if self._testMethodName in ['testLogNotAllowed',
+                                    'testLogNegative',
+                                    'testLogZero']:
+            os.environ['MOCK_TEST_BRANCHES'] = 'master'
+        elif self._testMethodName in ['testLogOne',
+                                      'testLogTwo',
+                                      'testLogFive',
+                                      'testSnarf']:
+            os.environ['MOCK_TEST_BRANCHES'] = 'feature'
+        elif 'MOCK_TEST_BRANCHES' in os.environ:
+            del(os.environ['MOCK_TEST_BRANCHES'])
+        super(GitLogTest, self).setUp()
+
         ini = os.path.join(DATA_DIR, 'multi-channel.ini')
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
         conf.supybot.plugins.Git.maxCommitsAtOnce.setValue(3)
@@ -170,35 +201,41 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self._metamock.__exit__()
 
     def testLogNonexistent(self):
-        expected = ['No configured repository named nothing.']
-        self.assertResponses('log nothing', expected)
+        expected = ['No repository named nothing, showing available:',
+                    '\x02test2\x02 (Test Repository 2)',
+                    '\x02test3\x02 (Test Repository 3)']
+        self.assertResponses('repolog nothing', expected)
 
     def testLogNotAllowed(self):
         expected = ['Sorry, not allowed in this channel.']
-        self.assertResponses('log test1', expected)
+        self.assertResponses('repolog test1', expected)
 
     def testLogZero(self):
-        expected = ['(\x02log <short name> [count]\x02) -- Display the last ' +
-                    'commits on the named repository. [count] defaults to 1 ' +
-                    'if unspecified.']
-        self.assertResponses('log test2 0', expected)
+        expected = [
+            "(\x02repolog repo [branch [count]]\x02) -- Display the last " +
+            "commits on the named repository. branch defaults to " +
+            "'master', count defaults to 1 if unspecified."
+        ]
+        self.assertResponses('repolog test2 master 0', expected)
 
     def testLogNegative(self):
-        expected = ['(\x02log <short name> [count]\x02) -- Display the last ' +
-                    'commits on the named repository. [count] defaults to 1 ' +
-                    'if unspecified.']
-        self.assertResponses('log test2 -1', expected)
+        expected = [
+            '(\x02repolog repo [branch [count]]\x02) -- Display the last ' +
+            "commits on the named repository. branch defaults to " +
+            "'master', count defaults to 1 if unspecified."
+        ]
+        self.assertResponses('repolog test2 master -1', expected)
 
     def testLogOne(self):
         expected = ['[test2|feature|nstark] Fix bugs.']
-        self.assertResponses('log test2', expected)
+        self.assertResponses('repolog test2 feature', expected)
 
     def testLogTwo(self):
         expected = [
             '[test2|feature|tlannister] I am more long-winded',
             '[test2|feature|nstark] Fix bugs.',
         ]
-        self.assertResponses('log test2 2', expected)
+        self.assertResponses('repolog test2 feature 2', expected)
 
     def testLogFive(self):
         expected = [
@@ -207,12 +244,13 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
             '[test2|feature|tlannister] I am more long-winded',
             '[test2|feature|nstark] Fix bugs.',
         ]
-        self.assertResponses('log test2 5', expected)
+        self.assertResponses('repolog test2 feature 5', expected)
 
     def testSnarf(self):
         self.Repo.commit.return_value = COMMITS[4]
         expected = [
-            "[test2|feature|tlannister] I'm the only one getting things done.",
+            "Talking about deadbee?",
+            "[test2|unknown|tlannister] I'm the only one getting things done.",
         ]
         self.assertResponses('who wants some deadbeef?', expected,
                              usePrefixChar=False)

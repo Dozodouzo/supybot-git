@@ -207,8 +207,8 @@ to handle the `log` command:
 Alternatively, specify `@git log` instead of just `@log` when calling.
 This was reported as issue #9.
 
-Static checking
----------------
+Static checking & unit tests
+----------------------------
 
 pep8:
 
@@ -216,8 +216,11 @@ pep8:
 
 pylint:
 
-  $ pylint --rcfile pylint.conf plugin.py __init__.py config.py > pylint.log
+  $ pylint --rcfile pylint.conf *.py > pylint.log
 
+unit tests - run in supybot config directory
+
+  $ supybot-test  --plugins-dir plugins
 
 
 
