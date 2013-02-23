@@ -151,6 +151,11 @@ class GitPluginException(Exception):
     pass
 
 
+def on_timeout():
+    ''' Handler for Timer events. '''
+    raise GitPluginException('timeout')
+
+
 class _Options(object):
     ''' Simple container for option values. '''
 
@@ -243,14 +248,21 @@ class _Repository(object):
 
     branches = property(lambda self: self.commit_by_branch.keys())
 
-    def fetch(self):
+    def fetch(self, timeout=300):
         "Contact git repository and update branches appropriately."
         self.repo.remote().update()
         for branch in self.branches:
-            if str(self.repo.active_branch) == branch:
-                self.repo.remote().pull(branch)
-            else:
-                self.repo.remote().fetch(branch + ':' + branch)
+            try:
+                timer = threading.Timer(timeout, on_timeout)
+                timer.start()
+                if str(self.repo.active_branch) == branch:
+                    self.repo.remote().pull(branch)
+                else:
+                    self.repo.remote().fetch(branch + ':' + branch)
+                timer.cancel()
+            except GitPluginException:
+                self.log.error('Timeout in fetch() for %s at %s' %
+                                   (branch, self.long_name))
 
     def get_commit(self, sha):
         "Fetch the commit with the given SHA, throws GitCommandError."
@@ -286,21 +298,19 @@ class _GitFetcher(threading.Thread):
     # check a variable very frequently.
     SHUTDOWN_CHECK_PERIOD = 0.1     # Seconds
 
-    # TODO: Wrap git fetch command and enforce a timeout.  Git will probably
-    # timeout on its own in most cases, but I have actually seen it hang
-    # forever on "fetch" before.
-
-    def __init__(self, log_, repositories, period, *args, **kwargs):
+    def __init__(self, plugin, *args, **kwargs):
         """
         Takes a list of repositories and a period (in seconds) to poll them.
         As long as it is running, the repositories will be kept up to date
         every period seconds (with a git fetch).
         """
         super(_GitFetcher, self).__init__(*args, **kwargs)
-        self.repository_list = repositories
-        self.period = period * 1.1        # Hacky attempt to avoid resonance
+        self.log = plugin.log
+        self.timeout = plugin.registryValue('fetchTimeout')
+        self.repository_list = plugin.repository_list
+        self.period = plugin.registryValue('pollPeriod')
+        self.period *= 1.1      # Hacky attempt to avoid resonance
         self.shutdown = False
-        self.log = log_
 
     def stop(self):
         """
@@ -322,7 +332,7 @@ class _GitFetcher(threading.Thread):
                     try:
                         if not repository.repo:
                             repository.clone()
-                        repository.fetch()
+                        repository.fetch(self.timeout)
                     except GitCommandError as e:
                         self.log.error("Error in git command: " + str(e),
                                        exc_info=True)
@@ -448,8 +458,7 @@ class Git(callbacks.PluginRegexp):
         period = self.registryValue('pollPeriod')
         if period > 0:
             if not self.fetcher or not self.fetcher.isAlive():
-                self.fetcher = _GitFetcher(
-                                    self.log, self.repository_list, period)
+                self.fetcher = _GitFetcher(self)
                 self.fetcher.start()
             schedule.addEvent(self._poll, time.time() + period,
                               name=self.name())

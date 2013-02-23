@@ -63,5 +63,8 @@ conf.registerGlobalValue(Git, 'enableSnarf',
                            " commit if a sha is found in the channel"
                            " conversation"))
 
+conf.registerGlobalValue(Git, 'fetchTimeout',
+    registry.NonNegativeInteger(300, """Max time for fetch/clone operations
+       (seconds)."""))
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
