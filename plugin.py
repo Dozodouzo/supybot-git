@@ -668,12 +668,14 @@ class Git(callbacks.PluginRegexp):
         if not repositories:
             irc.reply('No repositories configured for this channel.')
             return
+        fmt = '\x02%(short_name)s\x02 (%(name)s) %(url)s %(cnt)d %(branch)s'
         for r in repositories:
-            fmt = '\x02%(short_name)s\x02 (%(name)s)'
             irc.reply(fmt % {
                 'name': r.long_name,
                 'short_name': r.options.short_name,
                 'url': r.options.url,
+                'cnt': len(r.branches),
+                'branch': _plural(len(r.branches), 'branch')
             })
 
     repositories = wrap(repositories, ['channel'])

@@ -140,8 +140,10 @@ class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
 
     def testRepositoryList(self):
         expected = [
-            '\x02test1\x02 (Test Repository 1)',
-            '\x02test2\x02 (Test Repository 2)',
+            '\x02test1\x02 (Test Repository 1)' +
+                ' /somewhere/to/nowhere 1 branch',
+            '\x02test2\x02 (Test Repository 2)' +
+                ' /somewhere/to/nowhere 1 branch',
         ]
         self.assertResponses('repositories', expected)
 
@@ -202,8 +204,10 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
 
     def testLogNonexistent(self):
         expected = ['No repository named nothing, showing available:',
-                    '\x02test2\x02 (Test Repository 2)',
-                    '\x02test3\x02 (Test Repository 3)']
+            '\x02test2\x02 (Test Repository 2) ' +
+                '/somewhere/to/nowhere 0 branchs',
+            '\x02test3\x02 (Test Repository 3) ' +
+                '/somewhere/to/nowhere 0 branchs']
         self.assertResponses('repolog nothing', expected)
 
     def testLogNotAllowed(self):
