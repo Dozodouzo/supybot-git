@@ -689,22 +689,6 @@ class Git(callbacks.PluginRegexp):
 
     branches = wrap(branches, ['channel', 'somethingWithoutSpaces'])
 
-    def gitrehash(self, irc, msg, args):
-        "Obsolete command, remove this function eventually."
-        irc.reply('"gitrehash" is obsolete, please use "rehash".')
-
-    def repolist(self, irc, msg, args):
-        "Obsolete command, remove this function eventually."
-        irc.reply('"repolist" is obsolete, please use "repositories".')
-
-    def shortlog(self, irc, msg, args):
-        "Obsolete command, remove this function eventually."
-        irc.reply('"shortlog" is obsolete, please use "repolog".')
-
-    # Overridden to hide the obsolete commands
-    def listCommands(self, pluginCommands=None):
-        return ['repolog', 'rehash', 'repositories', 'branches']
-
 
 Class = Git
 
