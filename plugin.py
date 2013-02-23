@@ -386,6 +386,24 @@ class _GitFetcher(threading.Thread):
             end_time = time.time() + self.period
 
 
+class _DisplayCtx:
+    ''' Simple container for displaying commits stuff. '''
+    SNARF = 'snarf'
+    REPOLOG = 'repolog'
+    COMMITS = 'commits'
+
+    def __init__(self, irc, channel, repository, kind=None):
+        self.irc = irc
+        self.channel = channel
+        self.repo = repository
+        self.kind = kind if kind else self.COMMITS
+
+    @property
+    def use_group_header(self):
+        ''' Return True if the group header should be applied. '''
+        return self.repo.options.group_header and self.kind != self.REPOLOG
+
+
 class Git(callbacks.PluginRegexp):
     "Please see the README file to configure and use this plugin."
     # pylint: disable=R0904
@@ -422,57 +440,56 @@ class Git(callbacks.PluginRegexp):
         for section in parser.sections():
             options = dict(parser.items(section))
             self.repository_list.append(
-                           _Repository(self.log, repo_dir, section, options))
+                            _Repository(self.log, repo_dir, section, options))
 
-    def _display_some_commits(self, irc, channel,
-                              repository, commits, branch):
+    def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
         for commit in commits:
-            lines = _format_message(repository, commit, branch)
+            lines = _format_message(ctx.repo, commit, branch)
             for line in lines:
-                msg = ircmsgs.privmsg(channel, line)
-                irc.queueMsg(msg)
+                msg = ircmsgs.privmsg(ctx.channel, line)
+                ctx.irc.queueMsg(msg)
 
-    def _display_commits(self, irc, channel,
-                         repository, commits_by_branch, ctx='commits'):
+    def _get_limited_commits(self, ctx, commits_by_branch):
+        "Return the topmost commits which are OK to display."
+        top_commits = []
+        for key in commits_by_branch.keys():
+            top_commits.extend(commits_by_branch[key])
+        top_commits = sorted(top_commits, key = lambda c: c.committed_date)
+        commits_at_once = self.registryValue('maxCommitsAtOnce')
+        if len(top_commits) > commits_at_once:
+            ctx.irc.queueMsg(ircmsgs.privmsg(ctx.channel,
+                             "Showing latest %d of %d commits to %s..." % (
+                             commits_at_once,
+                             len(top_commits),
+                             ctx.repo.long_name,
+                             )))
+        top_commits = top_commits[-commits_at_once:]
+        return top_commits
+
+    def _display_commits(self, ctx, commits_by_branch):
         "Display a nicely-formatted list of commits in a channel."
 
         if not commits_by_branch:
             return
-
-        all_commits = []
-        for key in commits_by_branch.keys():
-            all_commits.extend(commits_by_branch[key])
-        all_commits = sorted(all_commits, key = lambda c: c.committed_date)
-        commits_at_once = self.registryValue('maxCommitsAtOnce')
-        if len(all_commits) > commits_at_once:
-            irc.queueMsg(ircmsgs.privmsg(channel,
-                         "Showing latest %d of %d commits to %s..." % (
-                         commits_at_once,
-                         len(all_commits),
-                         repository.long_name,
-                         )))
-        all_commits = all_commits[-commits_at_once:]
-
-        for branch, commits in commits_by_branch.iteritems():
-            for a in set([c.author.name for c in commits]):
-                commits_ = [c for c in commits
-                               if c.author.name == a and c in all_commits]
-                if not repository.options.group_header or ctx == 'repolog':
-                    self._display_some_commits(irc, channel,
-                                               repository, commits_, branch)
+        top_commits = self._get_limited_commits(ctx, commits_by_branch)
+        for branch, all_commits in commits_by_branch.iteritems():
+            for a in set([c.author.name for c in all_commits]):
+                commits = [c for c in all_commits
+                               if c.author.name == a and c in top_commits]
+                if not ctx.use_group_header:
+                    self._display_some_commits(ctx, commits, branch)
                     continue
-                if ctx == 'snarf':
+                if ctx.kind == _DisplayCtx.SNARF:
                     line = "Talking about %s?" % \
-                                repository.get_commit_id(commits_[0])[0:7]
+                                ctx.repo.get_commit_id(commits[0])[0:7]
                 else:
-                    name = repository.options.short_name
+                    name = ctx.repo.options.short_name
                     line = "%s pushed %d commit(s) to %s at %s" % (
-                        a, len(commits_), branch, name)
-                msg = ircmsgs.privmsg(channel, line)
-                irc.queueMsg(msg)
-                self._display_some_commits(irc, channel,
-                                           repository, commits_, branch)
+                        a, len(commits), branch, name)
+                msg = ircmsgs.privmsg(ctx.channel, line)
+                ctx.irc.queueMsg(msg)
+                self._display_some_commits(ctx, commits, branch)
 
     def _schedule_next_event(self):
         ''' Schedule next run for gitFetcher. '''
@@ -499,8 +516,8 @@ class Git(callbacks.PluginRegexp):
                         (repository.long_name, str(e)))
                 new_commits_by_branch = repository.get_new_commits()
                 for irc, channel in targets:
-                    self._display_commits(irc, channel, repository,
-                                          new_commits_by_branch)
+                    ctx = _DisplayCtx(irc, channel, repository)
+                    self._display_commits(ctx, new_commits_by_branch)
                 for branch in new_commits_by_branch:
                     repository.commit_by_branch[branch] = \
                        repository.get_commit(branch)
@@ -591,9 +608,8 @@ class Git(callbacks.PluginRegexp):
         for repository in repositories:
             commit = repository.get_commit(sha)
             if commit:
-                commits = {'unknown': [commit]}
-                self._display_commits(irc, channel,
-                                      repository, commits, 'snarf')
+                ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
+                self._display_commits(ctx, {'unknown': [commit]})
                 break
 
     def die(self):
@@ -617,8 +633,8 @@ class Git(callbacks.PluginRegexp):
             return
         branch_head = repository.get_commit(branch)
         commits = repository.get_recent_commits(branch_head, count)[::-1]
-        self._display_commits(
-            irc, channel, repository, {branch: commits}, 'repolog')
+        ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.REPOLOG)
+        self._display_commits(ctx, {branch: commits})
 
     repolog = wrap(repolog, ['channel',
                              'somethingWithoutSpaces',
