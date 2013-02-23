@@ -13,17 +13,22 @@ modified the code:
 * Made it possible to listen to several branches in the same repo
   definition.
 * Added an optional group header printed before groups of lines.
-* To support multiple branches configuration and several commands has
-  been changed.
-* The 'log' command has been renamed to 'repolog'. Maintaining the
-  'log' name requires some horrible tweaks, and it's anyway likely
-  to clash with other plugins beeing too generic.
+* Moved all configuration to the supybot config system (the git.ini
+  file is no more)
+* To support multiple branches and configuration several commands has
+  been changed. Notably there are new commands to create and destroy
+  repositories. Several command have been renamed, most to repo.. names
+  like repoadd, repolog, repolist in an attempt to make them easy to
+  remember and less likely to clash with other plugins.
 * The logging has been fixed, upstream is broken and does not respect
   configuration. Added stacktraces to some exception handling.
-* Backwards compatibilty has been dropped: GitPython 0.1 is not supported,
-  some old commands are not defined.
+* Backwards compatibility has been dropped: GitPython 0.1 is not supported,
+  some old commands are not defined, compatility stuff in config is dropped.
 * Static checking using pylint and pep8 has been added.
 * Code has been reorganized to a hopefully more consistent shape.
+* The initial cloning of the git repository has been moved to the
+  explicit repoadd command.
+* A timeout is used to complete otherwise hanging fetch operations.
 
 There's a pull request at Mike's repo pending. Depending on the outcome of
 that this will be long-time separate fork or not.
@@ -59,11 +64,66 @@ Dependencies
 
 This plugin depends on the Python packages:
 
-* GitPython (supports 0.1.x and 0.3.x)
-* Mock (if you want to run the tests)
+* GitPython (vers 0.3.x required)
 
 Dependencies are also listed in `requirements.txt`.  You can install them with
 the command `pip install -r requirements.txt`.
+
+Getting started
+---------------
+* Refer to the supybot documentation to install supybot and configure
+  your server e. g., using subybot-wizard. Verify that you can start and
+  contact your bot.
+
+* Unpack the plugin into the plugins directory (created by
+  supybot-wizard):
+```
+      $ cd plugins
+      $ git clone https://github.com/leamas/supybot-git Git
+```
+
+* Restart the server and use @list to verify that the plugin is loaded:
+```
+    <leamas> @list
+    <al-bot-test> leamas: Admin, Channel, Config, Git, Owner, and User
+```
+
+* Identify yourself for the bot in a *private window*. Creating user +
+  password is part of the supybot-wizard process.
+```
+     <leamas> identify al my-secret-pw
+     <al-bot-test> The operation succeeded.
+```
+
+* Define your first directory, using a a repository you have access to and
+  a channel you want to feed e. g.,
+```
+    <leamas> @repoadd leamas-git https://github.com/leamas/supybot-git #al-bot-test
+    <al-bot-test> leamas: Repository created and cloned
+```
+
+* Initially you will follow all branches (the 'branches' config item is '\*') Use
+  the branches command to see branches in you repo:
+```
+    <leamas> @branches leamas-git
+    <al-bot-test> leamas: Watched branches: master, devel
+```
+
+* If you commit and push something to your repository you will see the
+  commits in the channel:
+```
+    <al-bot-test> Alec Leamas pushed 3 commit(s) to devel at leamas-git
+    <al-bot-test> [leamas-git|devel|Alec Leamas] Adapt tests for no ini-file
+    <al-bot-test> [leamas-git|devel|Alec Leamas] Remove INI-file, use registry instead
+    <al-bot-test> [leamas-git|devel|Alec Leamas] Doc update
+```
+
+* If a commit is mentioned in a conversation the bot will provide info on it.
+```
+    <leamas> what about 15a74ae?
+    <al-bot-test> Talking about 15a74ae?
+    <al-bot-test> [leamas-git|unknown|Alec Leamas] Adapt tests for no ini-file
+```
 
 Configuration
 -------------
@@ -72,24 +132,33 @@ The configuration is done completely in the supybot registry. There are general
 settings and repository specific ones.
 
 To see the general settings:
+```
     @config list plugins.git
-    leamas: @repos, configFile, enableSnarf, fetchTimeout, maxCommitsAtOnce,
+    leamas: @repos, enableSnarf, fetchTimeout, maxCommitsAtOnce,
     pollPeriod, public, repoDir, and repolist
+```
 
-Each settins has help info (@config help plugins.git.enableSnarf), and could be
-inspected and set using the @config plugin, see it's documents
+Each setting has help info and could be inspected and set using the config
+plugin, see it's documents. Quick crash course using enableSnarf as example:
+* Getting help: @config help plugins.git.enableSnarf
+* See actual value: @config  plugins.git.enableSnarf
+* Setting value: @config  plugins.git.enableSnarf True
 
 The available repos can be listed using
+```
     @config list plugins.git.repos
     leamas: @test1, @test2, and @test3
+```
 
 The settings for each repo is below these. To see available settings:
+```
     @config list plugins.git.repos.test1
     leamas: branches, channels, commitLink, commitMessage, enableSnarf,
     groupHeader, name, and url
+```
 
 These variables can be manipulated using the @config command in the same way.
-After modifying thee variables using @reload git to make them effective.
+NOTE! After modifying the variables using @reload git to make them effective.
 
 
 Commit Messages
@@ -128,13 +197,10 @@ As noted above, the default is a simpler version of this:
 Leading spaces in any line of the message are discarded, so you can format it
 nicely in the file.
 
-
 As mentioned above, there are a few things that can be configured within the
 Supybot configuration framework.  For relative paths, they are relative to
 where Supybot is invoked.  If you're unsure what that might be, just set them
 to absolute paths.  The settings are found within `supybot.plugins.Git`:
-
-* `configFile`: Path to the INI file.  Default: git.ini
 
 * `repoDir`: Path where local clones of repositories will be kept.  This is a
   directory that will contain a copy of all repository being tracked.
@@ -151,7 +217,8 @@ to absolute paths.  The settings are found within `supybot.plugins.Git`:
 How Notification Works
 ----------------------
 
-The first time a repository is created it's also cloned.
+When a repository is created it's also cloned. After this, a long-running
+thread fetches changes from the remote repo periodically
 
 **Warning #1:** If the repository is big and/or the network is slow, the
 first load may take a very long time!
@@ -178,8 +245,7 @@ Command List
 
 * `branches`: Lists tracked branches for a given repository.
 
-* `rehash`: Reload the INI file, cloning any newly present repositories.
-  Restarts any polling if applicable.
+* `rehash`: Reload configuraiton, restarts any polling if applicable.
 
 * 'repoadd`: Adds a new repo given it's name, an url and one or more channels
   which should be informed. The url might be a relative path, interpreted from
@@ -188,25 +254,29 @@ Command List
 * `repokill`: Remove an  existing repository given it's name.
 
 As usual with Supybot plugins, you can call these commands by themselves or
-with the plugin name prefix, e.g. `@git log`.  The latter form is only
-necessary if another plugin has a command called `log` as well, causing a
+with the plugin name prefix, e.g. `@git rehash`.  The latter form is only
+necessary if another plugin has a command called `rehash` as well, causing a
 conflict.
 
 
 Static checking & unit tests
 ----------------------------
 
-pep8:
-
+pep8 (in the Git directory):
+```
   $ pep8 --config pep8.conf . > pep8.log
-
-pylint:
-
-  $ pylint --rcfile pylint.conf *.py > pylint.log
-
-unit tests - run in supybot config directory
-
-  $ supybot-test  --plugins-dir plugins
+```
+pylint: (in the Git directory):
+```
+  $ pylint --rcfile pylint.conf \*.py > pylint.log
+```
+unit tests - run in supybot home directory
+```
+  $ pushd plugins/Git/testdata
+  $ tar xzf git-repo.tar.gz
+  $ popd
+  $ supybot-test  plugins/Git
+```
 
 
 
