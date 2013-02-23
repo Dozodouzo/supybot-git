@@ -171,6 +171,11 @@ def _format_message(repository, commit, branch='unknown'):
     return result
 
 
+class GitPluginException(Exception):
+    ''' Common base class for exceptions in this plugin. '''
+    pass
+
+
 class _Options(object):
     ''' Simple container for option values. '''
 
@@ -429,7 +434,8 @@ class Git(callbacks.PluginRegexp):
         repo_dir = self.registryValue('repoDir')
         config = self.registryValue('configFile')
         if not os.access(config, os.R_OK):
-            raise Exception('Cannot access configuration file: %s' % config)
+            raise GitPluginException(
+                    'Cannot access configuration file: %s' % config)
         parser = ConfigParser.RawConfigParser()
         parser.read(config)
         for section in parser.sections():
