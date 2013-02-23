@@ -253,12 +253,9 @@ class _Repository(object):
                 self.repo.remote().fetch(branch + ':' + branch)
 
     def get_commit(self, sha):
-        "Fetch the commit with the given SHA.  Returns None if not found."
+        "Fetch the commit with the given SHA, throws GitCommandError."
         # pylint: disable=E0602
-        try:
-            return self.repo.commit(sha)
-        except git.GitCommandError:
-            return None
+        return self.repo.commit(sha)
 
     def get_new_commits(self):
         '''
@@ -555,11 +552,13 @@ class Git(callbacks.PluginRegexp):
         repositories = filter(lambda r: channel in r.options.channels,
                               self.repository_list)
         for repository in repositories:
-            commit = repository.get_commit(sha)
-            if commit:
-                ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
-                self._display_commits(ctx, {'unknown': [commit]})
-                break
+            try:
+                commit = repository.get_commit(sha)
+            except GitCommandError:
+                continue
+            ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
+            self._display_commits(ctx, {'unknown': [commit]})
+            break
 
     def die(self):
         ''' Stop all threads.  '''
@@ -580,7 +579,12 @@ class Git(callbacks.PluginRegexp):
             irc.reply('Available branches: ' +
                           ', '.join(repository.branches))
             return
-        branch_head = repository.get_commit(branch)
+        try:
+            branch_head = repository.get_commit(branch)
+        except GitCommandError:
+            self.log.info("Cant get branch commit", exc_info=True)
+            irc.reply("Internal error retrieving repolog data")
+            return
         commits = repository.get_recent_commits(branch_head, count)[::-1]
         ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.REPOLOG)
         self._display_commits(ctx, {branch: commits})
