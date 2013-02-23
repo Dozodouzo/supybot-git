@@ -79,9 +79,9 @@ def _format_link(repository, commit):
     for c in repository.options.commit_link:
         if escaped:
             if c == 'c':
-                result += repository.get_commit_id(commit)[0:7]
+                result += commit.hexsha[0:7]
             elif c == 'C':
-                result += repository.get_commit_id(commit)
+                result += commit.hexsha
             else:
                 result += c
             escaped = False
@@ -103,8 +103,8 @@ def _format_message(repository, commit, branch='unknown'):
     subst = {
         'a': commit.author.name,
         'b': branch,
-        'c': repository.get_commit_id(commit)[0:7],
-        'C': repository.get_commit_id(commit),
+        'c': commit.hexsha[0:7],
+        'C': commit.hexsha,
         'e': commit.author.email,
         'l': _format_link(repository, commit),
         'm': commit.message.split('\n')[0],
@@ -259,10 +259,6 @@ class _Repository(object):
             return self.repo.commit(sha)
         except git.GitCommandError:
             return None
-
-    def get_commit_id(self, commit):
-        ''' Return the id i. e., the 40-char git sha. '''
-        return commit.hexsha
 
     def get_new_commits(self):
         '''
@@ -439,8 +435,7 @@ class Git(callbacks.PluginRegexp):
                     self._display_some_commits(ctx, commits, branch)
                     continue
                 if ctx.kind == _DisplayCtx.SNARF:
-                    line = "Talking about %s?" % \
-                                ctx.repo.get_commit_id(commits[0])[0:7]
+                    line = "Talking about %s?" % commits[0].hexsha[0:7]
                 else:
                     name = ctx.repo.options.short_name
                     line = "%s pushed %d commit(s) to %s at %s" % (
