@@ -40,7 +40,6 @@ import supybot.world as world
 
 import ConfigParser
 import fnmatch
-from functools import wraps
 import os
 import threading
 import time
@@ -62,30 +61,6 @@ def _plural(count, singular, plural=None):
     if abs(count) <= 1:
         return singular
     return plural if plural else pluralize(singular)
-
-
-def synchronized(tlockname):
-    """
-    Decorates a class method (with self as the first parameter) to acquire the
-    member variable lock with the given name (e.g. 'lock' ==> self.lock) for
-    the duration of the function (blocking).
-    """
-
-    def _synched(func):
-        ''' Wraps the lock. '''
-
-        @wraps(func)
-        def _synchronizer(self, *args, **kwargs):
-            ''' Implements the locking. '''
-            tlock = self.__getattribute__(tlockname)
-            tlock.acquire()
-            try:
-                return func(self, *args, **kwargs)
-            finally:
-                tlock.release()
-        return _synchronizer
-
-    return _synched
 
 
 def _get_commits(repo, first, last):
@@ -219,8 +194,7 @@ class _Repository(object):
         self.long_name = long_name
         self.options = _Options(options, long_name)
         self.commit_by_branch = {}
-        self.errors = []
-        self.lock = threading.RLock()
+        self.lock = threading.Lock()
         self.repo = None
         if not os.path.exists(repo_dir):
             os.makedirs(repo_dir)
@@ -229,7 +203,6 @@ class _Repository(object):
         # TODO: Move this to GitWatcher (separate thread)
         self.clone()
 
-    @synchronized('lock')
     def clone(self):
         "If the repository doesn't exist on disk, clone it."
 
@@ -270,7 +243,6 @@ class _Repository(object):
 
     branches = property(lambda self: self.commit_by_branch.keys())
 
-    @synchronized('lock')
     def fetch(self):
         "Contact git repository and update branches appropriately."
         self.repo.remote().update()
@@ -280,7 +252,6 @@ class _Repository(object):
             else:
                 self.repo.remote().fetch(branch + ':' + branch)
 
-    @synchronized('lock')
     def get_commit(self, sha):
         "Fetch the commit with the given SHA.  Returns None if not found."
         # pylint: disable=E0602
@@ -289,12 +260,10 @@ class _Repository(object):
         except git.GitCommandError:
             return None
 
-    @synchronized('lock')
     def get_commit_id(self, commit):
         ''' Return the id i. e., the 40-char git sha. '''
         return commit.hexsha
 
-    @synchronized('lock')
     def get_new_commits(self):
         '''
         Return dict of commits by branch which are more recent then those
@@ -312,22 +281,9 @@ class _Repository(object):
                                         len(results)))
         return new_commits_by_branch
 
-    @synchronized('lock')
     def get_recent_commits(self, branch, count):
         ''' Return count top commits for a branch in a repo. '''
         return list(self.repo.iter_commits(branch))[:count]
-
-    @synchronized('lock')
-    def record_error(self, e):
-        "Save the exception 'e' for future error reporting."
-        self.errors.append(e)
-
-    @synchronized('lock')
-    def get_errors(self):
-        "Return a list of exceptions that have occurred since last get_errors."
-        result = self.errors
-        self.errors = []
-        return result
 
 
 class _GitFetcher(threading.Thread):
@@ -369,11 +325,12 @@ class _GitFetcher(threading.Thread):
             for repository in self.repository_list:
                 if self.shutdown:
                     break
-                if repository.lock.acquire(blocking=False):
+                if repository.lock.acquire(False):
                     try:
                         repository.fetch()
                     except GitCommandError as e:
-                        repository.record_error(e)
+                        self.log.error("Error in git command: " + str(e),
+                                       exc_info=True)
                     finally:
                         repository.lock.release()
                 else:
@@ -509,12 +466,8 @@ class Git(callbacks.PluginRegexp):
         ''' Perform poll of a repo, display changes. '''
         # Manual non-blocking lock calls here to avoid potentially long
         # waits (if it fails, hope for better luck in the next _poll).
-        if repository.lock.acquire(blocking=False):
+        if repository.lock.acquire(False):
             try:
-                errors = repository.get_errors()
-                for e in errors:
-                    self.log.error('Unable to fetch %s: %s' %
-                        (repository.long_name, str(e)))
                 new_commits_by_branch = repository.get_new_commits()
                 for irc, channel in targets:
                     ctx = _DisplayCtx(irc, channel, repository)
