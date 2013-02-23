@@ -200,8 +200,8 @@ class _Repository(object):
             os.makedirs(repo_dir)
         self.path = os.path.join(repo_dir, self.options.short_name)
 
-        # TODO: Move this to GitWatcher (separate thread)
-        self.clone()
+        if world.testing:
+            self.clone()
 
     def clone(self):
         "If the repository doesn't exist on disk, clone it."
@@ -320,6 +320,8 @@ class _GitFetcher(threading.Thread):
                     break
                 if repository.lock.acquire(False):
                     try:
+                        if not repository.repo:
+                            repository.clone()
                         repository.fetch()
                     except GitCommandError as e:
                         self.log.error("Error in git command: " + str(e),
@@ -460,6 +462,10 @@ class Git(callbacks.PluginRegexp):
         # waits (if it fails, hope for better luck in the next _poll).
         if repository.lock.acquire(False):
             try:
+                if not repository.repo:
+                    log.info('Postponing repository read: %s: Not inited.' %
+                             repository.long_name)
+                    raise GitPluginException('')
                 new_commits_by_branch = repository.get_new_commits()
                 for irc, channel in targets:
                     ctx = _DisplayCtx(irc, channel, repository)
@@ -470,6 +476,8 @@ class Git(callbacks.PluginRegexp):
             except GitCommandError as e:
                 self.log.error('Exception in _poll repository %s: %s' %
                     (repository.options.short_name, str(e)))
+            except GitPluginException:
+                pass
             finally:
                 repository.lock.release()
         else:
