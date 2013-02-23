@@ -28,6 +28,8 @@ from supybot.commands import optional
 from supybot.commands import threading
 from supybot.commands import time
 from supybot.commands import wrap
+from supybot.utils.str import pluralize
+from supybot.utils.str import toBool
 
 import supybot.ircmsgs as ircmsgs
 import supybot.callbacks as callbacks
@@ -57,15 +59,9 @@ from git import GitCommandError
 
 def _plural(count, singular, plural=None):
     ''' Return singular/plural form of singular arg depending on count. '''
-    if count == 1:
+    if abs(count) <= 1:
         return singular
-    if plural:
-        return plural
-    if singular[-1] == 's':
-        return singular + 'es'
-    if singular[-1] == 'y':
-        return singular[:-1] + 'ies'
-    return singular + 's'
+    return plural if plural else pluralize(singular)
 
 
 def synchronized(tlockname):
@@ -203,8 +199,7 @@ class _Options(object):
         self.commit_msg = options.get('commit message', '[%s|%b|%a] %m')
         self.commit_link = options.get('commit link', '')
         self.url = options['url']
-        header = options.get('group header', 'True')
-        self.group_header = header.lower() in ['1', 'true', 'on', 'enabled']
+        self.group_header = toBool(options.get('group header', 'True'))
 
 
 class _Repository(object):

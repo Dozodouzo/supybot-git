@@ -117,7 +117,7 @@ class GitRehashTest(PluginTestCase):
 
     def testRehashEmpty(self):
         conf.supybot.plugins.Git.configFile.setValue(DATA_DIR + '/empty.ini')
-        self.assertResponse('rehash', 'Git reinitialized with 0 repositories.')
+        self.assertResponse('rehash', 'Git reinitialized with 0 repository.')
 
     def testRehashOne(self):
         self._metamock = patch('__builtin__.list')
@@ -205,9 +205,9 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     def testLogNonexistent(self):
         expected = ['No repository named nothing, showing available:',
             '\x02test2\x02 (Test Repository 2) ' +
-                '/somewhere/to/nowhere 0 branchs',
+                '/somewhere/to/nowhere 0 branch',
             '\x02test3\x02 (Test Repository 3) ' +
-                '/somewhere/to/nowhere 0 branchs']
+                '/somewhere/to/nowhere 0 branch']
         self.assertResponses('repolog nothing', expected)
 
     def testLogNotAllowed(self):
