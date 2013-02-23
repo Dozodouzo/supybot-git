@@ -3,10 +3,35 @@ Leamas's supybot-git fork
 
 This branch (master) contains some commits which have been sent as a
 pull request upstream. I have continued the work in the devel branch.
+=======
+Leamas supybot-git fork
+=======================
+
+For the moment, this is a fork of Mike Muellers excellent work at
+https://github.com/mmueller/supybot-git. For better or worse I have
+modified the code:
+* Made it possible to listen to several branches in the same repo
+  definition.
+* Added an optional group header printed before groups of lines.
+* To support multiple branches configuration and several commands has
+  been changed.
+* The 'log' command has been renamed to 'repolog'. Maintaining the
+  'log' name requires some horrible tweaks, and it's anyway likely
+  to clash with other plugins beeing too generic.
+* The logging has been fixed, upstream is broken and does not respect
+  configuration. Added stacktraces to some exception handling.
+* Backwards compatibilty has been dropped: GitPython 0.1 is not supported,
+  some old commands are not defined.
+* Static checking using pylint and pep8 has been added.
+* Code has been reorganized to a hopefully more consistent shape.
+
+There's a pull request at Mike's repo pending. Depending on the outcome of
+that this will be long-time separate fork or not.
+
+--- end of Alec's addendum
 
 Supybot Git Plugin
 ==================
-
 This is a plugin for the IRC bot Supybot that introduces the ability to
 monitor Git repositories.  Features:
 
