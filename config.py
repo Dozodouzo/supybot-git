@@ -41,10 +41,7 @@ def configure(advanced):
 
 Git = conf.registerPlugin('Git')
 
-
-conf.registerGlobalValue(Git, 'configFile',
-    registry.String('git.ini', """The path to the repository configuration
-        file."""))
+conf.registerGroup(Git, 'repos')
 
 conf.registerGlobalValue(Git, 'repoDir',
     registry.String('git_repositories', """The path where local copies of
@@ -64,7 +61,7 @@ conf.registerGlobalValue(Git, 'enableSnarf',
                            " conversation"))
 
 conf.registerGlobalValue(Git, 'fetchTimeout',
-    registry.NonNegativeInteger(300, """Max time for fetch/clone operations
+    registry.NonNegativeInteger(300, """Max time for fetch operations
        (seconds)."""))
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:

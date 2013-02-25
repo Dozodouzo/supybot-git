@@ -68,56 +68,29 @@ the command `pip install -r requirements.txt`.
 Configuration
 -------------
 
-The Git plugin has a few standard configuration settings, but the primary
-configuration - where the repositories are defined - lives in an INI file.
-By default, it will look for the file 'git.ini' in the directory where you run
-Supybot.  You can override this with "config plugins.Git.configFile
-/path/to/file".
+The configuration is done completely in the supybot registry. There are general
+settings and repository specific ones.
 
-Here is an example of a repository definition:
+To see the general settings:
+    @config list plugins.git
+    leamas: @repos, configFile, enableSnarf, fetchTimeout, maxCommitsAtOnce,
+    pollPeriod, public, repoDir, and repolist
 
-    [Prototype]
-    short name = prototype
-    url = https://github.com/sstephenson/prototype.git
-    commit link = https://github.com/sstephenson/prototype/commit/%c
-    channels = #prototype
+Each settins has help info (@config help plugins.git.enableSnarf), and could be
+inspected and set using the @config plugin, see it's documents
 
-Most of this will be self-explanatory.  This defines a repository for the
-Prototype JavaScript library, so the Git plugin will be able to fetch a copy
-of it and display commits as they happen.
+The available repos can be listed using
+    @config list plugins.git.repos
+    leamas: @test1, @test2, and @test3
 
-Let's break down the possible settings:
+The settings for each repo is below these. To see available settings:
+    @config list plugins.git.repos.test1
+    leamas: branches, channels, commitLink, commitMessage, enableSnarf,
+    groupHeader, name, and url
 
-* `short name`: *Required.* This is the nickname you use in all commands that
-  interact with the repository.
+These variables can be manipulated using the @config command in the same way.
+After modifying thee variables using @reload git to make them effective.
 
-* `url`: *Required.* The URL to the git repository, which may be a path on
-  disk, or a URL to a remote repository.
-
-* `channels`: *Required.* A space-separated list of channels where
-  notifications of new commits will appear.  If you provide more than one
-  channel, all channels will receive commit messages.  This is also a weak
-  privacy measure; people on other channels will not be able to request
-  information about the repository. All interaction with the repository is
-  limited to these channels.
-
-* `branches`: *Optional.* Space-separated list fo branches to follow for
-   this repository. Accepts wildcards, '*' means all branches, 'release*'
-   all branches beginnning with 'release'. Default: master
-
-* `commit link`: *Optional.* A format string describing how to link to a
-  particular commit. These links may appear in commit notifications from the
-  plugin.  Two format specifiers are supported: %c (7-digit SHA) and %C (full
-  40-digit SHA).  Default: nothing.
-
-* `commit message`: *Optional.* A format string describing how to describe
-  commits in the channel.  See Commit Messages below for detail.  Default:
-  `[%s|%b|%a] %m`
-
-* `group header`: *Optional.* A boolean setting. If true, the commits for
-   each author is preceded by a single line like 'John le Carré committed
-   5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
-   before presenting data for a commit id found in the irc conversation.
 
 Commit Messages
 ---------------
@@ -132,8 +105,7 @@ It uses the following substitution parameters:
     %e       Author email
     %l       Link to view commit on the web
     %m       Commit message (first line only)
-    %n       Name of repository (config section heading)
-    %s       Short name of repository
+    %n       Name of repository
     %u       Git URL for repository
     %(fg)    IRC color code (foreground only)
     %(fg,bg) IRC color code (foreground and background)
@@ -156,8 +128,6 @@ As noted above, the default is a simpler version of this:
 Leading spaces in any line of the message are discarded, so you can format it
 nicely in the file.
 
-Configurable Values
--------------------
 
 As mentioned above, there are a few things that can be configured within the
 Supybot configuration framework.  For relative paths, they are relative to
@@ -181,8 +151,7 @@ to absolute paths.  The settings are found within `supybot.plugins.Git`:
 How Notification Works
 ----------------------
 
-The first time a repository is loaded from the INI file, a clone will be
-performed and saved in the repoDir defined above.
+The first time a repository is created it's also cloned.
 
 **Warning #1:** If the repository is big and/or the network is slow, the
 first load may take a very long time!
@@ -199,38 +168,30 @@ may want to go manually delete it to free up disk space.
 Command List
 ------------
 
-* `log`: Takes a repository nickname (aka "short name") and an optional
-  count parameter (default 1).  Shows the last n commits on the branch tracked
-  for that repository.  Only works if the repository is configured for the
-  current channel.
+* `repolog`: Takes a repository nickname, a branch  and an optional
+  count parameter (default 1).  Shows the last n commits on the branches
+  tracked for that repository.  Only works if the repository is configured
+  for the current channel.
 
-* `repositories`: List any known repositories configured for the current
+* `repolist`: List any known repositories configured for the current
   channel.
+
+* `branches`: Lists tracked branches for a given repository.
 
 * `rehash`: Reload the INI file, cloning any newly present repositories.
   Restarts any polling if applicable.
+
+* 'repoadd`: Adds a new repo given it's name, an url and one or more channels
+  which should be informed. The url might be a relative path, interpreted from
+  supybot's start directory.
+
+* `repokill`: Remove an  existing repository given it's name.
 
 As usual with Supybot plugins, you can call these commands by themselves or
 with the plugin name prefix, e.g. `@git log`.  The latter form is only
 necessary if another plugin has a command called `log` as well, causing a
 conflict.
 
-Known Bugs
-----------
-
-In Supybot 0.83.4.1, the Owner plugin has a `log` command that might interfere
-with this plugin's `log` command.  Not only that, but Owner's `log` is broken,
-and raises this exception:
-
-    TypeError: 'NoneType' object is not callable
-
-If you see this, the simplest workaround is to set Git as the primary plugin
-to handle the `log` command:
-
-    @defaultplugin log Git
-
-Alternatively, specify `@git log` instead of just `@log` when calling.
-This was reported as issue #9.
 
 Static checking & unit tests
 ----------------------------

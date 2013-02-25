@@ -25,12 +25,13 @@ A Supybot plugin that monitors and interacts with git repositories.
 """
 
 from supybot.commands import optional
+from supybot.commands import commalist
 from supybot.commands import threading
 from supybot.commands import time
 from supybot.commands import wrap
 from supybot.utils.str import pluralize
-from supybot.utils.str import toBool
 
+import supybot.conf as conf
 import supybot.ircmsgs as ircmsgs
 import supybot.callbacks as callbacks
 import supybot.schedule as schedule
@@ -38,12 +39,11 @@ import supybot.log as log
 import supybot.registry as registry
 import supybot.world as world
 
-import ConfigParser
 import fnmatch
 import os
+import shutil
 import threading
 import time
-import traceback
 
 try:
     import git
@@ -108,8 +108,7 @@ def _format_message(repository, commit, branch='unknown'):
         'e': commit.author.email,
         'l': _format_link(repository, commit),
         'm': commit.message.split('\n')[0],
-        'n': repository.long_name,
-        's': repository.options.short_name,
+        'n': repository.name,
         'S': ' ',
         'u': repository.options.url,
         'r': '\x0f',
@@ -145,6 +144,90 @@ def _format_message(repository, commit, branch='unknown'):
         result.append(outline.encode('utf-8'))
     return result
 
+_URL_TEXT = "The URL to the git repository, which may be a path on" \
+            " disk, or a URL to a remote repository."""
+
+_NAME_TXT = "This is the nickname you use in all commands that interact " \
+            " that interact with the repository"""
+
+_SNARF_TXT = "Eavesdrop and send commit info if a commit id is found in " \
+             " IRC chat"""
+
+_CHANNELS_TXT = """A space-separated list of channels where
+ notifications of new commits will appear.  If you provide more than one
+ channel, all channels will receive commit messages.  This is also a weak
+ privacy measure; people on other channels will not be able to request
+ information about the repository. All interaction with the repository is
+ limited to these channels."""
+
+_BRANCHES_TXT = """Space-separated list fo branches to follow for
+ this repository. Accepts wildcards, * means all branches, release*
+ all branches beginnning with releas.e"""
+
+_LINK_TXT = """ A format string describing how to link to a
+ particular commit. These links may appear in commit notifications from the
+ plugin.  Two format specifiers are supported: %c (7-digit SHA) and %C (full
+ 40-digit SHA)."""
+
+_MESSAGE_TXT = """A format string describing how to describe
+ commits in the channel.  See  https://github.com/leamas/supybot-git for
+ details."""
+
+_GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
+ each author is preceded by a single line like 'John le Carre committed
+ 5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
+ before presenting data for a commit id found in the irc conversation."""
+
+
+def _register_repo(repo_group):
+    ''' Register a repository. '''
+    conf.registerGlobalValue(repo_group, 'name',
+                             registry.String('', _NAME_TXT))
+    conf.registerGlobalValue(repo_group, 'url',
+                             registry.String('', _URL_TEXT))
+    conf.registerGlobalValue(repo_group, 'channels',
+            registry.SpaceSeparatedListOfStrings('', _CHANNELS_TXT))
+    conf.registerGlobalValue(repo_group, 'branches',
+                             registry.String('*', _BRANCHES_TXT))
+    conf.registerGlobalValue(repo_group, 'commitLink',
+                             registry.String('', _LINK_TXT))
+    conf.registerGlobalValue(repo_group, 'commitMessage',
+                             registry.String('[%n|%b|%a] %m', _MESSAGE_TXT))
+    conf.registerGlobalValue(repo_group, 'enableSnarf',
+                             registry.Boolean(True, _SNARF_TXT))
+    conf.registerGlobalValue(repo_group, 'groupHeader',
+                             registry.Boolean(True, _GROUP_HDR_TXT))
+
+
+def _register_repos(plugin, plugin_group):
+    ''' Register the dynamically created repo definitins. '''
+
+    repos = conf.registerGroup(plugin_group, 'repos')
+    conf.registerGlobalValue(plugin_group, 'repolist',
+        registry.String('', 'List of configured repos'))
+    repo_list = plugin.registryValue('repolist').split()
+    for repo in repo_list:
+        repo_group = conf.registerGroup(repos, repo)
+        _register_repo(repo_group)
+
+
+def get_branches(option_val, repo, log_):
+    ''' Return list of branches in repo matching users's option_val. '''
+    opt_branches = [b.strip() for b in option_val.split()]
+    repo.remote().update()
+    repo_branches = \
+        [r.name.split('/')[1] for r in repo.remote().refs if r.is_detached]
+    branches = []
+    for opt in opt_branches:
+        matched = fnmatch.filter(repo_branches, opt)
+        if not matched:
+            log_.warning("No branch in repository matches " + opt)
+        else:
+            branches.extend(matched)
+    if not branches:
+        log_.error("No branch in repository matches: " + option_val)
+    return branches
+
 
 class GitPluginException(Exception):
     ''' Common base class for exceptions in this plugin. '''
@@ -156,87 +239,72 @@ def on_timeout():
     raise GitPluginException('timeout')
 
 
-class _Options(object):
+class _RepoOptions(object):
     ''' Simple container for option values. '''
+    # pylint: disable=R0902
 
-    class BadInifileException(Exception):
-        ''' Missing/bad values in git.ini-like config file. '''
-        pass
+    def __init__(self, plugin, repo_name):
 
-    def __init__(self, options, long_name):
-        required_values = ['short name', 'url']
-        optional_values = ['branches', 'channels', 'commit link',
-                           'commit message', 'group header']
-        for name in required_values:
-            if name not in options:
-                raise self.BadInifileException(
-                        'Section %s missing required value: %s' %
-                        (long_name, name))
-        for name in options.keys():
-            if name not in required_values and name not in optional_values:
-                raise self.BadInifileException(
-                        'Section %s contains unrecognized value: %s' %
-                        (long_name, name))
-        self.short_name = options['short name']
-        self.branches = options.get('branches', 'master')
-        self.channels = options.get('channels',
-                                    options.get('channel')).split()
-        self.commit_msg = options.get('commit message', '[%s|%b|%a] %m')
-        self.commit_link = options.get('commit link', '')
-        self.url = options['url']
-        self.group_header = toBool(options.get('group header', 'True'))
+        def get_value(key, default = None):
+            ''' Read a registry value, return default on missing. '''
+            try:
+                key = 'repos.' + repo_name + '.' + key
+                return plugin.registryValue(key)
+            except registry.NonExistentRegistryEntry as e:
+                if default:
+                    return default
+                else:
+                    raise e
+
+        self.repo_dir = plugin.registryValue('repoDir')
+        self.name = repo_name
+        self.url = get_value('url')
+        self.channels = get_value('channels')
+        self.branches = get_value('branches', 'master')
+        self.commit_msg = get_value('commitMessage', '[%s|%b|%a] %m')
+        self.commit_link = get_value('commitLink', '')
+        self.group_header = get_value('group header', True)
+        self.enable_snarf = get_value('enableSnarf', True)
 
 
 class _Repository(object):
-    "Represents a git repository being monitored."
+    """
+    Represents a git repository being monitored. The repository is critical
+    zone accessed both by main thread and the GitWatcher, guarded by
+    the lock attribute.
+    """
 
-    def __init__(self, log_, repo_dir, long_name, options):
+    def __init__(self, options, log_):
         """
         Initialize with a repository with the given name and dict of options
         from the config section.
         """
-        self.log = log
-        self.long_name = long_name
-        self.options = _Options(options, long_name)
+        self.log = log_
+        self.options = options
         self.commit_by_branch = {}
         self.lock = threading.Lock()
         self.repo = None
-        if not os.path.exists(repo_dir):
-            os.makedirs(repo_dir)
-        self.path = os.path.join(repo_dir, self.options.short_name)
+        if not os.path.exists(options.repo_dir):
+            os.makedirs(options.repo_dir)
+        self.path = os.path.join(options.repo_dir, options.name)
 
         if world.testing:
             self.clone()
 
+    name = property(lambda self: self.options.name)
+
+    branches = property(lambda self: self.commit_by_branch.keys())
+
     def clone(self):
         "If the repository doesn't exist on disk, clone it."
-
-        def get_branches(option_val, repo):
-            ''' Return list of branches matching users's option_val. '''
-            if 'MOCK_TEST_BRANCHES' in os.environ:
-                return os.environ['MOCK_TEST_BRANCHES'].split()
-            opt_branches = [b.strip() for b in option_val.split()]
-            repo.remote().update()
-            repo_branches = [r.name.split('/')[1]
-                for r in repo.remote().refs if r.is_detached]
-            branches = []
-            for opt in opt_branches:
-                matched = fnmatch.filter(repo_branches, opt)
-                if not matched:
-                    self.log.warning("No branch in repository matches " + opt)
-                else:
-                    branches.extend(matched)
-            if not branches:
-                self.log.error("No branch in repository matches: " +
-                               option_val)
-            return branches
 
         # pylint: disable=E0602
         if not os.path.exists(self.path):
             git.Git('.').clone(self.options.url, self.path, no_checkout=True)
         self.repo = git.Repo(self.path)
         self.commit_by_branch = {}
-        for branch in get_branches(self.options.branches, self.repo):
+        for branch in get_branches(
+                                self.options.branches, self.repo, self.log):
             try:
                 if str(self.repo.active_branch) == branch:
                     self.repo.remote().pull(branch)
@@ -245,8 +313,6 @@ class _Repository(object):
                 self.commit_by_branch[branch] = self.repo.commit(branch)
             except GitCommandError:
                 self.log.error("Cannot checkout repo branch: " + branch)
-
-    branches = property(lambda self: self.commit_by_branch.keys())
 
     def fetch(self, timeout=300):
         "Contact git repository and update branches appropriately."
@@ -262,7 +328,7 @@ class _Repository(object):
                 timer.cancel()
             except GitPluginException:
                 self.log.error('Timeout in fetch() for %s at %s' %
-                                   (branch, self.long_name))
+                                   (branch, self.name))
 
     def get_commit(self, sha):
         "Fetch the commit with the given SHA, throws GitCommandError."
@@ -307,10 +373,10 @@ class _GitFetcher(threading.Thread):
         super(_GitFetcher, self).__init__(*args, **kwargs)
         self.log = plugin.log
         self.timeout = plugin.registryValue('fetchTimeout')
-        self.repository_list = plugin.repository_list
         self.period = plugin.registryValue('pollPeriod')
         self.period *= 1.1      # Hacky attempt to avoid resonance
         self.shutdown = False
+        self.plugin = plugin
 
     def stop(self):
         """
@@ -325,7 +391,7 @@ class _GitFetcher(threading.Thread):
         # the main thread and avoid lock contention.
         end_time = time.time() + self.period / 2
         while not self.shutdown:
-            for repository in self.repository_list:
+            for repository in self.plugin.get_repositories():
                 if self.shutdown:
                     break
                 if repository.lock.acquire(False):
@@ -341,7 +407,7 @@ class _GitFetcher(threading.Thread):
                 else:
                     self.log.info(
                         'Postponing repository fetch: %s: Locked.' %
-                        repository.long_name)
+                        repository.name)
             # Wait for the next periodic check
             while not self.shutdown and time.time() < end_time:
                 time.sleep(_GitFetcher.SHUTDOWN_CHECK_PERIOD)
@@ -378,11 +444,14 @@ class Git(callbacks.PluginRegexp):
         self.__parent = super(Git, self)
         self.__parent.__init__(irc)
         self.fetcher = None
+        self.repolist_lock = threading.Lock()
         self._stop_polling()
-        self.repository_list = []
+        self._repository_list = []
+        plugin_group = conf.supybot.plugins.get(self.name())
+        _register_repos(self, plugin_group)
         try:
             self._read_config()
-        except (registry.NonExistentRegistryEntry, ConfigParser.Error) as e:
+        except registry.NonExistentRegistryEntry as e:
             if 'reply' in dir(irc):
                 irc.reply('Warning: %s' % str(e))
             else:
@@ -391,19 +460,13 @@ class Git(callbacks.PluginRegexp):
         self._schedule_next_event()
 
     def _read_config(self):
-        ''' Read module config file, normally git.ini. '''
-        self.repository_list = []
-        repo_dir = self.registryValue('repoDir')
-        config = self.registryValue('configFile')
-        if not os.access(config, os.R_OK):
-            raise GitPluginException(
-                    'Cannot access configuration file: %s' % config)
-        parser = ConfigParser.RawConfigParser()
-        parser.read(config)
-        for section in parser.sections():
-            options = dict(parser.items(section))
-            self.repository_list.append(
-                            _Repository(self.log, repo_dir, section, options))
+        ''' Read module configuration from registry. '''
+        repos = conf.supybot.plugins.get(self.name()).get('repos')
+        repository_list = []
+        for repo in repos._children.keys():      # pylint: disable=W0212
+            options = _RepoOptions(self, repo)
+            repository_list.append(_Repository(options, self.log))
+        self.set_repositories(repository_list)
 
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
@@ -425,7 +488,7 @@ class Git(callbacks.PluginRegexp):
                              "Showing latest %d of %d commits to %s..." % (
                              commits_at_once,
                              len(top_commits),
-                             ctx.repo.long_name,
+                             ctx.repo.name,
                              )))
         top_commits = top_commits[-commits_at_once:]
         return top_commits
@@ -446,7 +509,7 @@ class Git(callbacks.PluginRegexp):
                 if ctx.kind == _DisplayCtx.SNARF:
                     line = "Talking about %s?" % commits[0].hexsha[0:7]
                 else:
-                    name = ctx.repo.options.short_name
+                    name = ctx.repo.options.name
                     line = "%s pushed %d commit(s) to %s at %s" % (
                         a, len(commits), branch, name)
                 msg = ircmsgs.privmsg(ctx.channel, line)
@@ -471,10 +534,6 @@ class Git(callbacks.PluginRegexp):
         # waits (if it fails, hope for better luck in the next _poll).
         if repository.lock.acquire(False):
             try:
-                if not repository.repo:
-                    log.info('Postponing repository read: %s: Not inited.' %
-                             repository.long_name)
-                    raise GitPluginException('')
                 new_commits_by_branch = repository.get_new_commits()
                 for irc, channel in targets:
                     ctx = _DisplayCtx(irc, channel, repository)
@@ -484,14 +543,12 @@ class Git(callbacks.PluginRegexp):
                        repository.get_commit(branch)
             except GitCommandError as e:
                 self.log.error('Exception in _poll repository %s: %s' %
-                    (repository.options.short_name, str(e)))
-            except GitPluginException:
-                pass
+                    (repository.options.name, str(e)))
             finally:
                 repository.lock.release()
         else:
             log.info('Postponing repository read: %s: Locked.' %
-                repository.long_name)
+                repository.name)
 
     def _poll(self):
         ''' Look for and handle new commits in local copy of repo. '''
@@ -502,7 +559,7 @@ class Git(callbacks.PluginRegexp):
         # 2. This _poll occurs, and looks for new commits in those local
         #    copies.  (Therefore this function should be quick. If it is
         #    slow, it may block the entire bot.)
-        for repository in self.repository_list:
+        for repository in self.get_repositories():
             # Find the IRC/channel pairs to notify
             targets = []
             for irc in world.ircs:
@@ -511,14 +568,13 @@ class Git(callbacks.PluginRegexp):
                         targets.append((irc, channel))
             if not targets:
                 self.log.info("Skipping %s: not in configured channel(s)." %
-                              repository.long_name)
+                              repository.name)
                 continue
             try:
                 self._poll_repository(repository, targets)
             except Exception, e:                        # pylint: disable=W0703
                 self.log.error('Exception in _poll():' + str(e),
                                 exc_info=True)
-                traceback.print_exc(e)
         self._schedule_next_event()
 
     def _stop_polling(self):
@@ -545,12 +601,12 @@ class Git(callbacks.PluginRegexp):
 
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
-        matches = filter(lambda r: r.options.short_name == repo,
-                         self.repository_list)
+        matches = filter(lambda r: r.options.name == repo,
+                         self.get_repositories())
         if not matches:
             irc.reply('No repository named %s, showing available:'
                       % repo)
-            self.repositories(irc, msg, [])
+            self.repolist(irc, msg, [])
             return None
         # Enforce a modest privacy measure... don't let people probe the
         # repository outside the designated channel.
@@ -562,20 +618,39 @@ class Git(callbacks.PluginRegexp):
 
     def _snarf(self, irc, msg, match):
         r"""\b(?P<sha>[0-9a-f]{6,40})\b"""
-        if not self.registryValue('enableSnarf'):
-            return
         sha = match.group('sha')
         channel = msg.args[0]
-        repositories = filter(lambda r: channel in r.options.channels,
-                              self.repository_list)
+        repositories = [r for r in self.get_repositories()
+                            if channel in r.options.channels]
         for repository in repositories:
+            if not repository.options.enable_snarf:
+                continue
             try:
                 commit = repository.get_commit(sha)
-            except GitCommandError:
+            except git.exc.BadObject:
                 continue
             ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
             self._display_commits(ctx, {'unknown': [commit]})
             break
+
+    def set_repositories(self, repositories):
+        ''' Update the repository list, a critical zone operation. '''
+        with self.repolist_lock:
+            self._repository_list = repositories
+            repolist = [r.name for r in repositories]
+            self.setRegistryValue('repolist', ' '.join(repolist))
+
+    def add_repository(self, repository):
+        ''' Add new repository to shared list, in critical zone '''
+        with self.repolist_lock:
+            self._repository_list.append(repository)
+            repolist = [r.name for r in self._repository_list]
+            self.setRegistryValue('repolist', ' '.join(repolist))
+
+    def get_repositories(self):
+        ''' Return copy of the repository list, in critical zone '''
+        with self.repolist_lock:
+            return list(self._repository_list)
 
     def die(self):
         ''' Stop all threads.  '''
@@ -614,41 +689,40 @@ class Git(callbacks.PluginRegexp):
     def rehash(self, irc, msg, args):
         """(takes no arguments)
 
-        Reload the Git ini file and restart any period polling.
+        Reload the settings and restart any period polling.
         """
         self._stop_polling()
         try:
             self._read_config()
-        except (registry.NonExistentRegistryEntry, ConfigParser.Error) as e:
+        except registry.NonExistentRegistryEntry as e:
             irc.reply('Warning: %s' % str(e))
         self._schedule_next_event()
-        n = len(self.repository_list)
+        n = len(self.get_repositories())
         irc.reply('Git reinitialized with %d %s.' %
                       (n, _plural(n, 'repository')))
 
     rehash = wrap(rehash, [])
 
-    def repositories(self, irc, msg, args, channel):
+    def repolist(self, irc, msg, args, channel):
         """(takes no arguments)
 
         Display the names of known repositories configured for this channel.
         """
         repositories = filter(lambda r: channel in r.options.channels,
-                              self.repository_list)
+                              self.get_repositories())
         if not repositories:
             irc.reply('No repositories configured for this channel.')
             return
-        fmt = '\x02%(short_name)s\x02 (%(name)s) %(url)s %(cnt)d %(branch)s'
+        fmt = '\x02%(name)s\x02  %(url)s %(cnt)d %(branch)s'
         for r in repositories:
             irc.reply(fmt % {
-                'name': r.long_name,
-                'short_name': r.options.short_name,
+                'name': r.name,
                 'url': r.options.url,
                 'cnt': len(r.branches),
                 'branch': _plural(len(r.branches), 'branch')
             })
 
-    repositories = wrap(repositories, ['channel'])
+    repolist = wrap(repolist, ['channel'])
 
     def branches(self, irc, msg, args, channel, repo):
         """ <repository name>
@@ -661,6 +735,62 @@ class Git(callbacks.PluginRegexp):
 
     branches = wrap(branches, ['channel', 'somethingWithoutSpaces'])
 
+    def repoadd(self, irc, msg, args, channel, repo, url, channels):
+        """ <repository name> <url> <channel[,channel...]>
+
+        Add a new repository with name, url and a comma-separated list
+        of channels which should be connected to this repo.
+        """
+        repolist = self.registryValue('repolist').split()
+        if repo in repolist:
+            irc.reply('Error: repo exists')
+            return
+        repos = conf.supybot.plugins.get(self.name()).get('repos')
+        _register_repo(conf.registerGroup(repos, repo))
+        key = 'repos.' + repo + '.'
+        self.setRegistryValue(key + 'url', url)
+        self.setRegistryValue(key + 'name', repo)
+        self.setRegistryValue(key + 'channels', channels)
+        options = _RepoOptions(self, repo)
+        repository = _Repository(options, self.log)
+        if os.path.exists(repository.path):
+            shutil.rmtree(repository.path)
+        try:
+            repository.clone()
+        except GitCommandError as e:
+            self.log.info("Cannot clone: " + str(e), exc_info=True)
+            irc.reply("Error: Cannot clone repo (%s)." % str(e))
+            return
+        self.add_repository(repository)
+        irc.reply("Repository created and cloned")
+
+    repoadd = wrap(repoadd, ['owner',
+                             'channel',
+                             'somethingWithoutSpaces',
+                             'somethingWithoutSpaces',
+                             commalist('validChannel')])
+
+    def repokill(self, irc, msg, args, channel, reponame):
+        """ <repository name>
+
+        Removes an existing repository given it's name.
+        """
+        all_repos = self.get_repositories()
+        found_repos = [r for r in all_repos if r.name == reponame]
+        if not found_repos:
+            irc.reply('Error: repo does not exist')
+            return
+        all_repos.remove(found_repos[0])
+        self.set_repositories(all_repos)
+        repos_group = conf.supybot.plugins.get(self.name()).get('repos')
+        try:
+            repos_group.unregister(reponame)
+        except registry.NonExistentRegistryEntry:
+            pass
+        irc.reply('Repo deleted')
+
+    repokill = wrap(repokill,
+                    ['owner', 'channel', 'somethingWithoutSpaces'])
 
 Class = Git
 
