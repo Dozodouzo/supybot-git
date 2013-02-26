@@ -27,10 +27,11 @@
 # Too many public methods:
 # pylint: disable=R0904
 
+# http://sourceforge.net/apps/mediawiki/gribble/index.php?title=Plugin_testing
+
 from supybot.test import *
 from supybot import conf
 
-from mock import Mock, patch
 import git
 import os
 import time
@@ -42,32 +43,6 @@ DATA_DIR = os.path.join(SRC_DIR, 'test-data')
 # are not getting responses, you may need to bump this higher.
 LOOP_TIMEOUT = 0.1
 
-# Global mocks
-git.Git.clone = Mock()
-git.Repo = Mock()
-
-# A pile of commits for use wherever (most recent first)
-COMMITS = [Mock(), Mock(), Mock(), Mock(), Mock()]
-COMMITS[0].author.name = 'nstark'
-COMMITS[0].hexsha = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd'
-COMMITS[0].message = 'Fix bugs.'
-COMMITS[1].author.name = 'tlannister'
-COMMITS[1].hexsha = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd'
-COMMITS[1].message = 'I am more long-winded\nand may even use newlines.'
-COMMITS[2].author.name = 'tlannister'
-COMMITS[2].hexsha = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd'
-COMMITS[2].message = 'Snarks and grumpkins'
-COMMITS[3].author.name = 'jsnow'
-COMMITS[3].hexsha = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd'
-COMMITS[3].message = "Finished brooding, think I'll go brood."
-COMMITS[4].author.name = 'tlannister'
-COMMITS[4].hexsha = 'deadbeefcdefabcdefabcdefabcdefabcdefabcd'
-COMMITS[4].message = "I'm the only one getting things done."
-
-# Workaround Supybot 0.83.4.1 bug with Owner treating 'log' as a command
-conf.registerGlobalValue(conf.supybot.commands.defaultPlugins,
-                         'log', registry.String('Git', ''))
-conf.supybot.commands.defaultPlugins.get('log').set('Git')
 
 # Pre-test checks
 GIT_API_VERSION = int(git.__version__[2])
@@ -98,54 +73,66 @@ class PluginTestCaseUtilMixin(object):
         "Run a command and assert that it returns the given list of replies."
         responses = self._feedMsgLoop(query, **kwargs)
         responses = map(lambda m: m.args[1], responses)
-        self.assertEqual(responses, expectedResponses,
+        self.assertEqual(sorted(responses), sorted(expectedResponses),
                          '\nActual:\n%s\n\nExpected:\n%s' %
                          ('\n'.join(responses), '\n'.join(expectedResponses)))
         return responses
 
+    def clear_repos(self):
+        "Remove all defined repositories."
+        plugin_group = conf.supybot.plugins.get('Git')
+        try:
+            plugin_group.unregister('repos')
+        except registry.NonExistentRegistryEntry:
+            pass
+        conf.registerGroup(plugin_group, 'repos')
+        conf.supybot.plugins.Git.repolist.setValue('')
+        self.assertNotError('reload Git')
 
-class GitRehashTest(PluginTestCase):
-    plugins = ('Git',)
 
-    def setUp(self, nick='test'):
-        self._metamock = patch('git.Repo')
-        self.Repo = self._metamock.__enter__()
-        self.Repo.return_value = self.Repo
-        self.Repo.iter_commits.return_value = COMMITS
-        super(GitRehashTest, self).setUp()
+class GitRehashTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
+    plugins = ('Git', 'User')
+
+    def setUp(self, nick='test'):      # pylint: disable=W0221
+        ChannelPluginTestCase.setUp(self)
+        self.clear_repos()
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
+        self.assertNotError('register suptest suptest', private=True)
 
     def testRehashEmpty(self):
-        conf.supybot.plugins.Git.configFile.setValue(DATA_DIR + '/empty.ini')
         self.assertResponse('rehash', 'Git reinitialized with 0 repository.')
 
     def testRehashOne(self):
-        self._metamock = patch('__builtin__.list')
-        conf.supybot.plugins.Git.configFile.setValue(DATA_DIR + '/one.ini')
+        self.assertNotError('identify suptest suptest', private=True)
+        self.assertResponse(
+            'repoadd test7 plugins/Git/test-data/git-repo #test',
+            'Repository created and cloned')
         self.assertResponse('rehash', 'Git reinitialized with 1 repository.')
 
 
 class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     channel = '#test'
-    plugins = ('Git',)
+    plugins = ('Git', 'User', 'Config')
 
     def setUp(self):
-        self._metamock = patch('git.Repo')
-        self.Repo = self._metamock.__enter__()
-        super(GitRepositoryListTest, self).setUp()
-        ini = os.path.join(DATA_DIR, 'multi-channel.ini')
+        ChannelPluginTestCase.setUp(self)
+        self.clear_repos()
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
-        conf.supybot.plugins.Git.configFile.setValue(ini)
+        self.assertNotError(
+            'repoadd test1 plugins/Git/test-data/git-repo #test')
+        self.assertNotError(
+            'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.assertNotError(
+            'repoadd test3 plugins/Git/test-data/git-repo #test')
         self.assertResponse('rehash', 'Git reinitialized with 3 repositories.')
 
     def testRepositoryList(self):
         expected = [
-            '\x02test1\x02 (Test Repository 1)' +
-                ' /somewhere/to/nowhere 1 branch',
-            '\x02test2\x02 (Test Repository 2)' +
-                ' /somewhere/to/nowhere 1 branch',
+            '\x02test1\x02  plugins/Git/test-data/git-repo 4 branches',
+            '\x02test2\x02  plugins/Git/test-data/git-repo 4 branches',
+            '\x02test3\x02  plugins/Git/test-data/git-repo 4 branches',
         ]
-        self.assertResponses('repositories', expected)
+        self.assertResponses('repolist', expected)
 
 
 class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -153,17 +140,20 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     plugins = ('Git',)
 
     def setUp(self):
-        self._metamock = patch('git.Repo')
-        self.Repo = self._metamock.__enter__()
-        super(GitNoAccessTest, self).setUp()
-        ini = os.path.join(DATA_DIR, 'multi-channel.ini')
+        ChannelPluginTestCase.setUp(self)
+        self.clear_repos()
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
-        conf.supybot.plugins.Git.configFile.setValue(ini)
+        self.assertNotError(
+            'repoadd test1 plugins/Git/test-data/git-repo #test')
+        self.assertNotError(
+            'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.assertNotError(
+            'repoadd test3 plugins/Git/test-data/git-repo #test')
         self.assertResponse('rehash', 'Git reinitialized with 3 repositories.')
 
     def testRepositoryListNoAccess(self):
         expected = ['No repositories configured for this channel.']
-        self.assertResponses('repositories', expected)
+        self.assertResponses('repolist', expected)
 
     def testLogNoAccess(self):
         expected = ['Sorry, not allowed in this channel.']
@@ -171,43 +161,23 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
 
 
 class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
-    channel = '#somewhere'
+    channel = '#test'
     plugins = ('Git',)
 
     def setUp(self):
-        self._metamock = patch('git.Repo')
-        self.Repo = self._metamock.__enter__()
-        self.Repo.return_value = self.Repo
-        self.Repo.iter_commits.return_value = COMMITS
-        if self._testMethodName in ['testLogNotAllowed',
-                                    'testLogNegative',
-                                    'testLogZero']:
-            os.environ['MOCK_TEST_BRANCHES'] = 'master'
-        elif self._testMethodName in ['testLogOne',
-                                      'testLogTwo',
-                                      'testLogFive',
-                                      'testSnarf']:
-            os.environ['MOCK_TEST_BRANCHES'] = 'feature'
-        elif 'MOCK_TEST_BRANCHES' in os.environ:
-            del(os.environ['MOCK_TEST_BRANCHES'])
-        super(GitLogTest, self).setUp()
-
-        ini = os.path.join(DATA_DIR, 'multi-channel.ini')
-        conf.supybot.plugins.Git.pollPeriod.setValue(0)
+        ChannelPluginTestCase.setUp(self)
+        self.clear_repos()
         conf.supybot.plugins.Git.maxCommitsAtOnce.setValue(3)
-        conf.supybot.plugins.Git.configFile.setValue(ini)
-        self.assertResponse('rehash', 'Git reinitialized with 3 repositories.')
-
-    def tearDown(self):
-        del self.Repo
-        self._metamock.__exit__()
+        conf.supybot.plugins.Git.pollPeriod.setValue(0)
+        self.assertNotError(
+            'repoadd test1 plugins/Git/test-data/git-repo #unavailable')
+        self.assertNotError(
+            'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.assertResponse('rehash', 'Git reinitialized with 2 repositories.')
 
     def testLogNonexistent(self):
         expected = ['No repository named nothing, showing available:',
-            '\x02test2\x02 (Test Repository 2) ' +
-                '/somewhere/to/nowhere 0 branch',
-            '\x02test3\x02 (Test Repository 3) ' +
-                '/somewhere/to/nowhere 0 branch']
+            '\x02test2\x02  plugins/Git/test-data/git-repo 4 branches']
         self.assertResponses('repolog nothing', expected)
 
     def testLogNotAllowed(self):
@@ -231,32 +201,32 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.assertResponses('repolog test2 master -1', expected)
 
     def testLogOne(self):
-        expected = ['[test2|feature|nstark] Fix bugs.']
+        expected = ['[test2|feature|Tyrion Lannister] Snarks and grumpkins']
         self.assertResponses('repolog test2 feature', expected)
 
     def testLogTwo(self):
         expected = [
-            '[test2|feature|tlannister] I am more long-winded',
-            '[test2|feature|nstark] Fix bugs.',
+            '[test2|feature|Tyrion Lannister] I am more long-winded',
+            '[test2|feature|Tyrion Lannister] Snarks and grumpkins',
         ]
         self.assertResponses('repolog test2 feature 2', expected)
 
     def testLogFive(self):
         expected = [
-            'Showing latest 3 of 5 commits to Test Repository 2...',
-            '[test2|feature|tlannister] Snarks and grumpkins',
-            '[test2|feature|tlannister] I am more long-winded',
-            '[test2|feature|nstark] Fix bugs.',
+            'Showing latest 3 of 5 commits to test2...',
+            '[test2|feature|Tyrion Lannister] I am more long-winded',
+            '[test2|feature|Tyrion Lannister] Snarks and grumpkins',
+            '[test2|feature|Ned Stark] Fix bugs.',
         ]
         self.assertResponses('repolog test2 feature 5', expected)
 
     def testSnarf(self):
-        self.Repo.commit.return_value = COMMITS[4]
         expected = [
-            "Talking about deadbee?",
-            "[test2|unknown|tlannister] I'm the only one getting things done.",
+            "Talking about cbe46d8?",
+            "[test2|unknown|Tyrion Lannister]"
+                " I am the only one getting things done",
         ]
-        self.assertResponses('who wants some deadbeef?', expected,
+        self.assertResponses('What about cbe46d8?', expected,
                              usePrefixChar=False)
 
 
