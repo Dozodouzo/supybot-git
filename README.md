@@ -158,7 +158,7 @@ The available repos can be listed using
 The settings for each repo is below these. To see available settings:
 ```
     @config list plugins.git.repos.test1
-    leamas: branches, channels, commitLink, commitMessage, enableSnarf,
+    leamas: branches, channels, commitMessage1, commitMessage2, enableSnarf,
     groupHeader, name, and url
 ```
 
@@ -170,15 +170,14 @@ Commit Messages
 ---------------
 
 Commit messages are produced from a general format string that you define.
-in the commitMessage configuration item (see above).  It uses the following
-substitution parameters:
+in the commitMessage1 and  commitMessage2 configuration item (see above).
+They use the following substitution parameters:
 
     %a       Author name
     %b       Branch being watched
     %c       Commit SHA (first 7 digits)
     %C       Commit SHA (entire 40 digits)
     %e       Author email
-    %l       Link to view commit on the web
     %m       Commit message (first line only)
     %n       Name of repository
     %u       Git URL for repository
@@ -193,15 +192,15 @@ The format string can span multiple lines, in which case, the plugin will
 output multiple messages per commit.  Here is a format string that I am
 partial to:
 
-    commit message = %![%!%(14)%s%(15)%!|%!%(14)%b%(15)%!|%!%(14)%a%(15)%!]%! %m
-                     View%!:%! %(4)%l
+    commitMessage1 = %![%!%(14)%s%(15)%!|%!%(14)%b%(15)%!|%!%(14)%a%(15)%!]%! %m
+    commitMessage2 = View%!:%! %(4)%l
 
 As noted above, the default is a simpler version of this:
 
-    commit message = [%s|%b|%a] %m
+    commitMessage1 = [%s|%b|%a] %m
+    commitMessage2 = '' (unset)
 
-Leading spaces in any line of the message are discarded, so you can format it
-nicely in the file.
+Leading spaces in any message line are discarded.
 
 As mentioned above, there are a few things that can be configured within the
 Supybot configuration framework.  For relative paths, they are relative to
@@ -232,8 +231,8 @@ first load may take a very long time!
 **Warning #2:** If the repositories you track are big, this plugin will use a
 lot of disk space for its local clones.
 
-After this, a  poll operation runs (generally pretty quick), and
-then a check for any commits that arrived since the last check.
+After this, a  poll operation runs (generally pretty quick), including
+a check for any commits that arrived since the last check.
 
 Repository clones are never deleted. If you decide to stop tracking one, you
 may want to go manually delete it to free up disk space.
@@ -242,9 +241,8 @@ Command List
 ------------
 
 * `repolog`: Takes a repository nickname, a branch  and an optional
-  count parameter (default 1).  Shows the last n commits on the branches
-  tracked for that repository.  Only works if the repository is configured
-  for the current channel.
+  count parameter (default 1).  Shows the last n commits on that branch
+  Only works if the repository is configured for the current channel.
 
 * `repolist`: List any known repositories configured for the current
   channel.

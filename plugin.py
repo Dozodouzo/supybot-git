@@ -83,26 +83,6 @@ def _get_commits(repo, first, last):
     return repo.iter_commits(rev)
 
 
-def _format_link(repository, commit):
-    "Return a link to view a given commit, based on config setting."
-    result = ''
-    escaped = False
-    for c in repository.options.commit_link:
-        if escaped:
-            if c == 'c':
-                result += commit.hexsha[0:7]
-            elif c == 'C':
-                result += commit.hexsha
-            else:
-                result += c
-            escaped = False
-        elif c == '%':
-            escaped = True
-        else:
-            result += c
-    return result
-
-
 def _format_message(repository, commit, branch='unknown'):
     """
     Generate an formatted message for IRC from the given commit, using
@@ -117,7 +97,6 @@ def _format_message(repository, commit, branch='unknown'):
         'c': commit.hexsha[0:7],
         'C': commit.hexsha,
         'e': commit.author.email,
-        'l': _format_link(repository, commit),
         'm': commit.message.split('\n')[0],
         'n': repository.name,
         'S': ' ',
@@ -175,14 +154,13 @@ _BRANCHES_TXT = """Space-separated list fo branches to follow for
  this repository. Accepts wildcards, * means all branches, release*
  all branches beginnning with releas.e"""
 
-_LINK_TXT = """ A format string describing how to link to a
- particular commit. These links may appear in commit notifications from the
- plugin.  Two format specifiers are supported: %c (7-digit SHA) and %C (full
- 40-digit SHA)."""
+_MESSAGE1_TXT = """First line of message describing a commit in e. g., log
+ or snarf  messages. Constructed from printf-style substitutions.  See
+ https://github.com/leamas/supybot-git for details."""
 
-_MESSAGE_TXT = """A format string describing how to describe
- commits in the channel.  See  https://github.com/leamas/supybot-git for
- details."""
+_MESSAGE2_TXT = """Second line of message describing a commit in e. g., log
+ or snarf  messages. Often used for a view link. Constructed from printf-style
+ substitutions, see https://github.com/leamas/supybot-git for details."""
 
 _GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
  each author is preceded by a single line like 'John le Carre committed
@@ -203,10 +181,11 @@ def _register_repo(repo_group):
             registry.SpaceSeparatedListOfStrings('', _CHANNELS_TXT))
     conf.registerGlobalValue(repo_group, 'branches',
                              registry.String('*', _BRANCHES_TXT))
-    conf.registerGlobalValue(repo_group, 'commitLink',
-                             registry.String('', _LINK_TXT))
-    conf.registerGlobalValue(repo_group, 'commitMessage',
-                             registry.String('[%n|%b|%a] %m', _MESSAGE_TXT))
+    conf.registerGlobalValue(repo_group, 'commitMessage1',
+                             registry.String('[%n|%b|%a] %m',
+                                             _MESSAGE1_TXT))
+    conf.registerGlobalValue(repo_group, 'commitMessage2',
+                             registry.String('', _MESSAGE2_TXT))
     conf.registerGlobalValue(repo_group, 'enableSnarf',
                              registry.Boolean(True, _SNARF_TXT))
     conf.registerGlobalValue(repo_group, 'groupHeader',
@@ -277,7 +256,9 @@ class _RepoOptions(object):
         self.url = get_value('url')
         self.channels = get_value('channels')
         self.branches = get_value('branches', 'master')
-        self.commit_msg = get_value('commitMessage', '[%s|%b|%a] %m')
+        self.commit_msg = get_value('commitMessage1', '[%s|%b|%a] %m')
+        if get_value('commitMessage2'):
+            self.commit_msg += "\n" + get_value('commitMessage2')
         self.commit_link = get_value('commitLink', '')
         self.group_header = get_value('group header', True)
         self.enable_snarf = get_value('enableSnarf', True)
