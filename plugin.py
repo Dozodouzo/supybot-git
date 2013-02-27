@@ -178,6 +178,9 @@ _GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
  5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
  before presenting data for a commit id found in the irc conversation."""
 
+_TIMEOUT_TXT = """Max time for fetch operations (seconds). A value of 0
+disables polling of this repo completely"""
+
 
 def _register_repo(repo_group):
     ''' Register a repository. '''
@@ -197,6 +200,8 @@ def _register_repo(repo_group):
                              registry.Boolean(True, _SNARF_TXT))
     conf.registerGlobalValue(repo_group, 'groupHeader',
                              registry.Boolean(True, _GROUP_HDR_TXT))
+    conf.registerGlobalValue(repo_group, 'fetchTimeout',
+                             registry.Integer(300, _TIMEOUT_TXT))
 
 
 def _register_repos(plugin, plugin_group):
@@ -265,6 +270,7 @@ class _RepoOptions(object):
         self.commit_link = get_value('commitLink', '')
         self.group_header = get_value('group header', True)
         self.enable_snarf = get_value('enableSnarf', True)
+        self.timeout = get_value('fetchTimeout', 300)
 
 
 class _Repository(object):
@@ -292,6 +298,8 @@ class _Repository(object):
             self.clone()
 
     name = property(lambda self: self.options.name)
+
+    timeout = property(lambda self: self.options.timeout)
 
     branches = property(lambda self: self.commit_by_branch.keys())
 
@@ -372,7 +380,6 @@ class _GitFetcher(threading.Thread):
         """
         super(_GitFetcher, self).__init__(*args, **kwargs)
         self.log = plugin.log
-        self.timeout = plugin.registryValue('fetchTimeout')
         self.period = plugin.registryValue('pollPeriod')
         self.period *= 1.1      # Hacky attempt to avoid resonance
         self.shutdown = False
@@ -398,7 +405,7 @@ class _GitFetcher(threading.Thread):
                     try:
                         if not repository.repo:
                             repository.clone()
-                        repository.fetch(self.timeout)
+                        repository.fetch(repository.timeout)
                     except GitCommandError as e:
                         self.log.error("Error in git command: " + str(e),
                                        exc_info=True)
