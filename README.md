@@ -28,9 +28,12 @@ modified the code:
 * Code has been reorganized to a hopefully more consistent shape.
 * The initial cloning of the git repository has been moved to the
   explicit repoadd command.
-* A timeout is used to complete otherwise hanging fetch operations.
+* A timeout is used to complete otherwise hanging fetch operations. The
+  thread design has been revised removing busy-wait and improving
+  scheduling
 * The enableSnarf configuration value is now defined per repo, not as an
   overall value.
+* This README has been uodated, notably with a "Getting Started" section.
 
 There's a pull request at Mike's repo pending. Depending on the outcome of
 that this will be long-time separate fork or not.
@@ -136,7 +139,7 @@ settings and repository specific ones.
 To see the general settings:
 ```
     @config list plugins.git
-    leamas: @repos, enableSnarf, fetchTimeout, maxCommitsAtOnce,
+    leamas: @repos, fetchTimeout, maxCommitsAtOnce,
     pollPeriod, public, repoDir, and repolist
 ```
 
@@ -167,7 +170,8 @@ Commit Messages
 ---------------
 
 Commit messages are produced from a general format string that you define.
-It uses the following substitution parameters:
+in the commitMessage configuration item (see above).  It uses the following
+substitution parameters:
 
     %a       Author name
     %b       Branch being watched
@@ -219,8 +223,8 @@ to absolute paths.  The settings are found within `supybot.plugins.Git`:
 How Notification Works
 ----------------------
 
-When a repository is created it's also cloned. After this, a long-running
-thread fetches changes from the remote repo periodically
+When a repository is created it's also cloned. After this, a
+thread fetches changes from the remote repo periodically.
 
 **Warning #1:** If the repository is big and/or the network is slow, the
 first load may take a very long time!
@@ -228,7 +232,7 @@ first load may take a very long time!
 **Warning #2:** If the repositories you track are big, this plugin will use a
 lot of disk space for its local clones.
 
-After this, the poll operation involves a fetch (generally pretty quick), and
+After this, a  poll operation runs (generally pretty quick), and
 then a check for any commits that arrived since the last check.
 
 Repository clones are never deleted. If you decide to stop tracking one, you
