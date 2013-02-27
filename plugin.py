@@ -22,6 +22,18 @@
 
 """
 A Supybot plugin that monitors and interacts with git repositories.
+
+This code is threaded. A separate thread run the potential long-running
+replication of remote git repositories to local clones. The rest is handled
+by the main thread.
+
+A special case of long-running operation is the creation of new repositories,
+with the related inital git clone operation. ATM, this is in main thread.
+
+The critical sections are:
+   - The _Repository instances, locked with an instance attribute lock.
+   - The Repos instance (repos) in the Git plugin, locked by a
+     internal lock (all methods are synchronized).
 """
 
 from supybot.commands import optional
@@ -365,6 +377,41 @@ class _Repository(object):
         return list(self.repo.iter_commits(branch))[:count]
 
 
+class _Repos(object):
+    '''
+    Synchronized access to the list of _Repository and related
+    conf settings.
+    '''
+
+    def __init__(self, plugin):
+        self._lock = threading.Lock()
+        self._plugin = plugin
+        self._list = []
+        repos = conf.supybot.plugins.get(plugin.name()).get('repos')
+        for repo in repos._children.keys():      # pylint: disable=W0212
+            options = _RepoOptions(plugin, repo)
+            self.append(_Repository(options, plugin.log))
+
+    def set(self, repositories):
+        ''' Update the repository list. '''
+        with self._lock:
+            self._list = repositories
+            repolist = [r.name for r in repositories]
+            self._plugin.setRegistryValue('repolist', ' '.join(repolist))
+
+    def append(self, repository):
+        ''' Add new repository to shared list. '''
+        with self._lock:
+            self._list.append(repository)
+            repolist = [r.name for r in self._list]
+            self._plugin.setRegistryValue('repolist', ' '.join(repolist))
+
+    def get(self):
+        ''' Return copy of the repository list. '''
+        with self._lock:
+            return list(self._list)
+
+
 class _GitFetcher(threading.Thread):
     "A thread object to perform long-running Git operations."
 
@@ -398,7 +445,7 @@ class _GitFetcher(threading.Thread):
         # the main thread and avoid lock contention.
         end_time = time.time() + self.period / 2
         while not self.shutdown:
-            for repository in self.plugin.get_repositories():
+            for repository in self.plugin.repos.get():
                 if self.shutdown:
                     break
                 if repository.lock.acquire(False):
@@ -451,29 +498,16 @@ class Git(callbacks.PluginRegexp):
         self.__parent = super(Git, self)
         self.__parent.__init__(irc)
         self.fetcher = None
-        self.repolist_lock = threading.Lock()
-        self._stop_polling()
-        self._repository_list = []
         plugin_group = conf.supybot.plugins.get(self.name())
         _register_repos(self, plugin_group)
+        self._stop_polling()
         try:
-            self._read_config()
+            self.repos = _Repos(self)
         except registry.NonExistentRegistryEntry as e:
+            self.log.error(str(e), exc_info=True)
             if 'reply' in dir(irc):
-                irc.reply('Warning: %s' % str(e))
-            else:
-                # During bot startup, there is no one to reply to.
-                self.log.warning(str(e))
+                irc.reply('Error: %s' % str(e))
         self._schedule_next_event()
-
-    def _read_config(self):
-        ''' Read module configuration from registry. '''
-        repos = conf.supybot.plugins.get(self.name()).get('repos')
-        repository_list = []
-        for repo in repos._children.keys():      # pylint: disable=W0212
-            options = _RepoOptions(self, repo)
-            repository_list.append(_Repository(options, self.log))
-        self.set_repositories(repository_list)
 
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
@@ -566,7 +600,7 @@ class Git(callbacks.PluginRegexp):
         # 2. This _poll occurs, and looks for new commits in those local
         #    copies.  (Therefore this function should be quick. If it is
         #    slow, it may block the entire bot.)
-        for repository in self.get_repositories():
+        for repository in self.repos.get():
             # Find the IRC/channel pairs to notify
             targets = []
             for irc in world.ircs:
@@ -609,7 +643,7 @@ class Git(callbacks.PluginRegexp):
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
         matches = filter(lambda r: r.options.name == repo,
-                         self.get_repositories())
+                         self.repos.get())
         if not matches:
             irc.reply('No repository named %s, showing available:'
                       % repo)
@@ -627,7 +661,7 @@ class Git(callbacks.PluginRegexp):
         r"""\b(?P<sha>[0-9a-f]{6,40})\b"""
         sha = match.group('sha')
         channel = msg.args[0]
-        repositories = [r for r in self.get_repositories()
+        repositories = [r for r in self.repos.get()
                             if channel in r.options.channels]
         for repository in repositories:
             if not repository.options.enable_snarf:
@@ -639,25 +673,6 @@ class Git(callbacks.PluginRegexp):
             ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
             self._display_commits(ctx, {'unknown': [commit]})
             break
-
-    def set_repositories(self, repositories):
-        ''' Update the repository list, a critical zone operation. '''
-        with self.repolist_lock:
-            self._repository_list = repositories
-            repolist = [r.name for r in repositories]
-            self.setRegistryValue('repolist', ' '.join(repolist))
-
-    def add_repository(self, repository):
-        ''' Add new repository to shared list, in critical zone '''
-        with self.repolist_lock:
-            self._repository_list.append(repository)
-            repolist = [r.name for r in self._repository_list]
-            self.setRegistryValue('repolist', ' '.join(repolist))
-
-    def get_repositories(self):
-        ''' Return copy of the repository list, in critical zone '''
-        with self.repolist_lock:
-            return list(self._repository_list)
 
     def die(self):
         ''' Stop all threads.  '''
@@ -700,11 +715,11 @@ class Git(callbacks.PluginRegexp):
         """
         self._stop_polling()
         try:
-            self._read_config()
+            self.repos = _Repos(self)
         except registry.NonExistentRegistryEntry as e:
-            irc.reply('Warning: %s' % str(e))
+            irc.reply('Error: %s' % str(e))
         self._schedule_next_event()
-        n = len(self.get_repositories())
+        n = len(self.repos.get())
         irc.reply('Git reinitialized with %d %s.' %
                       (n, _plural(n, 'repository')))
 
@@ -716,7 +731,7 @@ class Git(callbacks.PluginRegexp):
         Display the names of known repositories configured for this channel.
         """
         repositories = filter(lambda r: channel in r.options.channels,
-                              self.get_repositories())
+                              self.repos.get())
         if not repositories:
             irc.reply('No repositories configured for this channel.')
             return
@@ -768,7 +783,7 @@ class Git(callbacks.PluginRegexp):
             self.log.info("Cannot clone: " + str(e), exc_info=True)
             irc.reply("Error: Cannot clone repo (%s)." % str(e))
             return
-        self.add_repository(repository)
+        self.repos.append(repository)
         irc.reply("Repository created and cloned")
 
     repoadd = wrap(repoadd, ['owner',
@@ -782,13 +797,13 @@ class Git(callbacks.PluginRegexp):
 
         Removes an existing repository given it's name.
         """
-        all_repos = self.get_repositories()
+        all_repos = self.repos.get()
         found_repos = [r for r in all_repos if r.name == reponame]
         if not found_repos:
             irc.reply('Error: repo does not exist')
             return
         all_repos.remove(found_repos[0])
-        self.set_repositories(all_repos)
+        self.repos.set(all_repos)
         repos_group = conf.supybot.plugins.get(self.name()).get('repos')
         try:
             repos_group.unregister(reponame)

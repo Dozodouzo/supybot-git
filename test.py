@@ -88,6 +88,7 @@ class PluginTestCaseUtilMixin(object):
         conf.registerGroup(plugin_group, 'repos')
         conf.supybot.plugins.Git.repolist.setValue('')
         self.assertNotError('reload Git')
+        self.assertResponse('rehash', 'Git reinitialized with 0 repository.')
 
 
 class GitRehashTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
