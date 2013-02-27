@@ -67,6 +67,48 @@ if not int(git.__version__[2]) == 3:
 from git import GitCommandError
 
 
+_URL_TEXT = "The URL to the git repository, which may be a path on" \
+            " disk, or a URL to a remote repository."""
+
+_NAME_TXT = "This is the nickname you use in all commands that interact " \
+            " that interact with the repository"""
+
+_SNARF_TXT = "Eavesdrop and send commit info if a commit id is found in " \
+             " IRC chat"""
+
+_CHANNELS_TXT = """A space-separated list of channels where
+ notifications of new commits will appear.  If you provide more than one
+ channel, all channels will receive commit messages.  This is also a weak
+ privacy measure; people on other channels will not be able to request
+ information about the repository. All interaction with the repository is
+ limited to these channels."""
+
+_BRANCHES_TXT = """Space-separated list fo branches to follow for
+ this repository. Accepts wildcards, * means all branches, release*
+ all branches beginnning with releas.e"""
+
+_MESSAGE1_TXT = """First line of message describing a commit in e. g., log
+ or snarf  messages. Constructed from printf-style substitutions.  See
+ https://github.com/leamas/supybot-git for details."""
+
+_MESSAGE2_TXT = """Second line of message describing a commit in e. g., log
+ or snarf  messages. Often used for a view link. Constructed from printf-style
+ substitutions, see https://github.com/leamas/supybot-git for details."""
+
+_GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
+ each author is preceded by a single line like 'John le Carre committed
+ 5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
+ before presenting data for a commit id found in the irc conversation."""
+
+_TIMEOUT_TXT = """Max time for fetch operations (seconds). A value of 0
+disables polling of this repo completely"""
+
+
+class GitPluginException(Exception):
+    ''' Common base class for exceptions in this plugin. '''
+    pass
+
+
 def _plural(count, singular, plural=None):
     ''' Return singular/plural form of singular arg depending on count. '''
     if abs(count) <= 1:
@@ -134,43 +176,6 @@ def _format_message(repository, commit, branch='unknown'):
         result.append(outline.encode('utf-8'))
     return result
 
-_URL_TEXT = "The URL to the git repository, which may be a path on" \
-            " disk, or a URL to a remote repository."""
-
-_NAME_TXT = "This is the nickname you use in all commands that interact " \
-            " that interact with the repository"""
-
-_SNARF_TXT = "Eavesdrop and send commit info if a commit id is found in " \
-             " IRC chat"""
-
-_CHANNELS_TXT = """A space-separated list of channels where
- notifications of new commits will appear.  If you provide more than one
- channel, all channels will receive commit messages.  This is also a weak
- privacy measure; people on other channels will not be able to request
- information about the repository. All interaction with the repository is
- limited to these channels."""
-
-_BRANCHES_TXT = """Space-separated list fo branches to follow for
- this repository. Accepts wildcards, * means all branches, release*
- all branches beginnning with releas.e"""
-
-_MESSAGE1_TXT = """First line of message describing a commit in e. g., log
- or snarf  messages. Constructed from printf-style substitutions.  See
- https://github.com/leamas/supybot-git for details."""
-
-_MESSAGE2_TXT = """Second line of message describing a commit in e. g., log
- or snarf  messages. Often used for a view link. Constructed from printf-style
- substitutions, see https://github.com/leamas/supybot-git for details."""
-
-_GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
- each author is preceded by a single line like 'John le Carre committed
- 5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
- before presenting data for a commit id found in the irc conversation."""
-
-_TIMEOUT_TXT = """Max time for fetch operations (seconds). A value of 0
-disables polling of this repo completely"""
-
-
 def _register_repo(repo_group):
     ''' Register a repository. '''
     conf.registerGlobalValue(repo_group, 'name',
@@ -196,17 +201,17 @@ def _register_repo(repo_group):
 
 def _register_repos(plugin, plugin_group):
     ''' Register the dynamically created repo definitins. '''
-
     repos = conf.registerGroup(plugin_group, 'repos')
     conf.registerGlobalValue(plugin_group, 'repolist',
-        registry.String('', 'List of configured repos'))
+        registry.String('',
+           "Internal list of configured repos, please don't touch "))
     repo_list = plugin.registryValue('repolist').split()
     for repo in repo_list:
         repo_group = conf.registerGroup(repos, repo)
         _register_repo(repo_group)
 
 
-def get_branches(option_val, repo, log_):
+def _get_branches(option_val, repo, log_):
     ''' Return list of branches in repo matching users's option_val. '''
     opt_branches = [b.strip() for b in option_val.split()]
     repo.remote().update()
@@ -222,16 +227,6 @@ def get_branches(option_val, repo, log_):
     if not branches:
         log_.error("No branch in repository matches: " + option_val)
     return branches
-
-
-class GitPluginException(Exception):
-    ''' Common base class for exceptions in this plugin. '''
-    pass
-
-
-def on_timeout():
-    ''' Handler for Timer events. '''
-    raise GitPluginException('timeout')
 
 
 class _RepoOptions(object):
@@ -259,7 +254,6 @@ class _RepoOptions(object):
         self.commit_msg = get_value('commitMessage1', '[%s|%b|%a] %m')
         if get_value('commitMessage2'):
             self.commit_msg += "\n" + get_value('commitMessage2')
-        self.commit_link = get_value('commitLink', '')
         self.group_header = get_value('group header', True)
         self.enable_snarf = get_value('enableSnarf', True)
         self.timeout = get_value('fetchTimeout', 300)
@@ -268,7 +262,7 @@ class _RepoOptions(object):
 class _Repository(object):
     """
     Represents a git repository being monitored. The repository is critical
-    zone accessed both by main thread and the GitWatcher, guarded by
+    zone accessed both by main thread and the GitFetcher, guarded by
     the lock attribute.
     """
 
@@ -295,13 +289,12 @@ class _Repository(object):
 
     def clone(self):
         "If the repository doesn't exist on disk, clone it."
-
         # pylint: disable=E0602
         if not os.path.exists(self.path):
             git.Git('.').clone(self.options.url, self.path, no_checkout=True)
         self.repo = git.Repo(self.path)
         self.commit_by_branch = {}
-        for branch in get_branches(
+        for branch in _get_branches(
                                 self.options.branches, self.repo, self.log):
             try:
                 if str(self.repo.active_branch) == branch:
@@ -317,19 +310,19 @@ class _Repository(object):
         self.repo.remote().update()
         for branch in self.branches:
             try:
-                timer = threading.Timer(timeout, on_timeout)
+                timer = threading.Timer(timeout, lambda: [][5])
                 timer.start()
                 if str(self.repo.active_branch) == branch:
                     self.repo.remote().pull(branch)
                 else:
                     self.repo.remote().fetch(branch + ':' + branch)
                 timer.cancel()
-            except GitPluginException:
+            except IndexError:
                 self.log.error('Timeout in fetch() for %s at %s' %
                                    (branch, self.name))
 
     def get_commit(self, sha):
-        "Fetch the commit with the given SHA, throws GitCommandError."
+        "Fetch the commit with the given SHA, throws BadObject."
         # pylint: disable=E0602
         return self.repo.commit(sha)
 
@@ -391,14 +384,12 @@ class _Repos(object):
 
 
 class _GitFetcher(threading.Thread):
-    "A one-shot thread object to perform long-running Git operations."
+    """
+    Thread replicating remote data to local repos roughly using git pull and
+    git fetch. When done schedules a poll_all_repos call and exits.
+    """
 
     def __init__(self, plugin, *args, **kwargs):
-        """
-        Given repolist (from plugin) replicates all remote changes
-        to local repo roughly using git pull and git fetch. Schedules
-        a poll_all_repos run after the fetch.
-        """
         super(_GitFetcher, self).__init__(*args, **kwargs)
         self.shutdown = False
         self.plugin = plugin
@@ -413,8 +404,6 @@ class _GitFetcher(threading.Thread):
         self.shutdown = True
 
     def run(self):
-        "The main thread method."
-
         start = time.time()
         for repository in self.plugin.repos.get():
             if self.shutdown:
@@ -533,7 +522,7 @@ class Git(callbacks.PluginRegexp):
     def _reset_polling(self, die=False):
         '''
         Revoke scheduled events, start a new fetch right now unless
-        die or already running.
+        die or testin.
         '''
         for ev in ['repofetch', 'repopoll']:
             try:
@@ -631,9 +620,9 @@ class Git(callbacks.PluginRegexp):
         #    start_fetch to be invoked periodically.
         # 2. start_fetch fires off the one-shot fetching thread which
         #    handles the long-running git replication.
-        # 3. When done, the fetcher thread schedules a _poll "now"
-        #    The poll takes place in main thread but is quick,
-        #    no remote IO is needed.
+        # 3. When done, the fetcher thread schedules a _poll_all_repos
+        #    "now". The poll takes place in main thread but is quick,
+        #    (almost) no remote IO is needed.
         start = time.time()
         for repository in self.repos.get():
             # Find the IRC/channel pairs to notify
@@ -789,7 +778,7 @@ class Git(callbacks.PluginRegexp):
             repos_group.unregister(reponame)
         except registry.NonExistentRegistryEntry:
             pass
-        irc.reply('Repo deleted')
+        irc.reply('Repository deleted')
 
     repokill = wrap(repokill,
                     ['owner', 'channel', 'somethingWithoutSpaces'])

@@ -17,7 +17,7 @@ modified the code:
   file is no more)
 * To support multiple branches and configuration several commands has
   been changed. Notably there are new commands to create and destroy
-  repositories. Several command have been renamed, most to repo.. names
+  repositories. Several command have been renamed, most to repo\* names
   like repoadd, repolog, repolist in an attempt to make them easy to
   remember and less likely to clash with other plugins.
 * The logging has been fixed, upstream is broken and does not respect
@@ -31,11 +31,11 @@ modified the code:
 * A timeout is used to complete otherwise hanging fetch operations. The
   thread design has been revised removing busy-wait and improving
   scheduling
-* The enableSnarf configuration value is now defined per repo, not as an
-  overall value.
-* This README has been uodated, notably with a "Getting Started" section.
+* In unittests mock is not used anymore, using a test repo with
+  live data instead.
+* This README has been updated, notably with a "Getting Started" section.
 
-There's a pull request at Mike's repo pending. Depending on the outcome of
+There's a pull request pending at Mike's repo. Depending on the outcome of
 that this will be long-time separate fork or not.
 
 --- end of Alec's addendum
@@ -62,7 +62,7 @@ Interface changes:
 * Several commands have been renamed.  Sorry for the inconvenience, but it was
   time to make some common sense usabliity improvements.
 * Repository definitions now take a `channels` option instead of a single
-  `channel` (although `channel` is supported for backwards compatibility).
+  `channel`.
 
 Dependencies
 ------------
@@ -77,7 +77,7 @@ the command `pip install -r requirements.txt`.
 Getting started
 ---------------
 * Refer to the supybot documentation to install supybot and configure
-  your server e. g., using subybot-wizard. Verify that you can start and
+  your server e. g., using supybot-wizard. Verify that you can start and
   contact your bot.
 
 * Unpack the plugin into the plugins directory (created by
@@ -100,7 +100,7 @@ Getting started
      <al-bot-test> The operation succeeded.
 ```
 
-* Define your first directory, using a a repository you have access to and
+* Define your first repo, using a a repository you have access to and
   a channel you want to feed e. g.,
 ```
     <leamas> @repoadd leamas-git https://github.com/leamas/supybot-git #al-bot-test
@@ -139,15 +139,16 @@ settings and repository specific ones.
 To see the general settings:
 ```
     @config list plugins.git
-    leamas: @repos, fetchTimeout, maxCommitsAtOnce,
-    pollPeriod, public, repoDir, and repolist
+    leamas: @repos, maxCommitsAtOnce, pollPeriod, public, repoDir, and repolist
 ```
 
 Each setting has help info and could be inspected and set using the config
-plugin, see it's documents. Quick crash course using enableSnarf as example:
-* Getting help: @config help plugins.git.enableSnarf
-* See actual value: @config  plugins.git.enableSnarf
-* Setting value: @config  plugins.git.enableSnarf True
+plugin, see it's documents. Quick crash course using pollPeriod as example:
+* Getting help: `@config help plugins.git.pollPeriod`
+* See actual value: `@config  plugins.git.pollPeriod`
+* Setting value: `@config  plugins.git.pollPeriod 60`
+
+The `public` and `repolist` options are internal, please don't touch.
 
 The available repos can be listed using
 ```
@@ -155,23 +156,23 @@ The available repos can be listed using
     leamas: @test1, @test2, and @test3
 ```
 
-The settings for each repo is below these. To see available settings:
+Settings for each repo are below these. To see available settings:
 ```
     @config list plugins.git.repos.test1
     leamas: branches, channels, commitMessage1, commitMessage2, enableSnarf,
-    groupHeader, name, and url
+    fetchTimeout, groupHeader, name, and url
 ```
 
 These variables can be manipulated using the @config command in the same way.
-NOTE! After modifying the variables using @reload git to make them effective.
+NOTE! After modifying the variables use `@reload git` to make them effective.
 
 
 Commit Messages
 ---------------
 
-Commit messages are produced from a general format string that you define.
-in the commitMessage1 and  commitMessage2 configuration item (see above).
-They use the following substitution parameters:
+Commit messages are produced from a general format string that you define in
+the commitMessage1 and commitMessage2 configuration items (see above). They
+use the following substitution parameters:
 
     %a       Author name
     %b       Branch being watched
@@ -188,54 +189,19 @@ They use the following substitution parameters:
     %S       Single space, only meaningful at line start.
     %%       A literal percent sign.
 
-The format string can span multiple lines, in which case, the plugin will
-output multiple messages per commit.  Here is a format string that I am
-partial to:
+Here is a format string template that I am partial to:
 
     commitMessage1 = %![%!%(14)%s%(15)%!|%!%(14)%b%(15)%!|%!%(14)%a%(15)%!]%! %m
-    commitMessage2 = View%!:%! %(4)%l
+    commitMessage2 = View%!:%! %(4)http://github.com/leamas/supybot-git/commits/%c
 
 As noted above, the default is a simpler version of this:
 
     commitMessage1 = [%s|%b|%a] %m
     commitMessage2 = '' (unset)
 
-Leading spaces in any message line are discarded.
+Leading space in any message line is discarded. Prepend line with %S if you
+want an indentation.
 
-As mentioned above, there are a few things that can be configured within the
-Supybot configuration framework.  For relative paths, they are relative to
-where Supybot is invoked.  If you're unsure what that might be, just set them
-to absolute paths.  The settings are found within `supybot.plugins.Git`:
-
-* `repoDir`: Path where local clones of repositories will be kept.  This is a
-  directory that will contain a copy of all repository being tracked.
-  Default: git\_repositories
-
-* `pollPeriod`: How often (in seconds) that repositories will be polled for
-  changes.  Zero disables periodic polling.  If you change the value from zero
-  to a positive value, call `rehash` to restart polling. Default: 120
-
-* `maxCommitsAtOnce`: Limit how many commits can be displayed in one update.
-  This will affect output from the periodic polling as well as the log
-  command.  Default: 5
-
-How Notification Works
-----------------------
-
-When a repository is created it's also cloned. After this, a
-thread fetches changes from the remote repo periodically.
-
-**Warning #1:** If the repository is big and/or the network is slow, the
-first load may take a very long time!
-
-**Warning #2:** If the repositories you track are big, this plugin will use a
-lot of disk space for its local clones.
-
-After this, a  poll operation runs (generally pretty quick), including
-a check for any commits that arrived since the last check.
-
-Repository clones are never deleted. If you decide to stop tracking one, you
-may want to go manually delete it to free up disk space.
 
 Command List
 ------------
@@ -247,15 +213,33 @@ Command List
 * `repolist`: List any known repositories configured for the current
   channel.
 
+* `repoadd`: Adds a new repo given it's name, an url and one or more channels
+  which should be connected. The url might be a relative path, interpreted from
+  supybot's start directory.
+
+* `repokill`: Remove an  existing repository given it's name.
+
 * `branches`: Lists tracked branches for a given repository.
 
 * `rehash`: Reload configuraiton, restarts any polling if applicable.
 
-* 'repoadd`: Adds a new repo given it's name, an url and one or more channels
-  which should be informed. The url might be a relative path, interpreted from
-  supybot's start directory.
+How Notification Works
+----------------------
 
-* `repokill`: Remove an  existing repository given it's name.
+When a repository is created it's also cloned. After this, a
+thread fetches changes from the remote repo periodically.
+
+**Warning #1:** If the repository is big and/or the network is slow, the
+first clone (when creating repo) may take a very long time!
+
+**Warning #2:** If the repositories you track are big, this plugin will use a
+lot of disk space for its local clones.
+
+After each fetch a  poll operation runs (generally pretty quick), including
+a check for any commits that arrived since the last check.
+
+Repository clones are never deleted. If you decide to stop tracking one, you
+may want to go manually delete it to free up disk space.
 
 As usual with Supybot plugins, you can call these commands by themselves or
 with the plugin name prefix, e.g. `@git rehash`.  The latter form is only

@@ -45,15 +45,19 @@ conf.registerGroup(Git, 'repos')
 
 conf.registerGlobalValue(Git, 'repoDir',
     registry.String('git_repositories', """The path where local copies of
-        repositories will be kept."""))
+    repositories will be kept. Relative paths are interpreted from
+    supybot's startup directory."""))
 
 conf.registerGlobalValue(Git, 'pollPeriod',
-    registry.NonNegativeInteger(120, """The frequency (in seconds) repositories
-        will be polled for changes.  Set to zero to disable polling."""))
+    registry.NonNegativeInteger(120, """ How often (in seconds) that
+  repositories will be polled for changes. Zero disables periodic polling.
+  If you change the value from zero to a positive value, call `rehash` to
+  restart polling."""))
 
 conf.registerGlobalValue(Git, 'maxCommitsAtOnce',
-    registry.NonNegativeInteger(5, """How many commits are displayed at
-        once from each repository."""))
+    registry.NonNegativeInteger(5, """Limit how many commits can be displayed
+  in one update. This will affect output from the periodic polling as well
+  as the log command"""))
 
 conf.registerGlobalValue(Git, 'fetchTimeout',
     registry.NonNegativeInteger(300, """Max time for fetch operations
