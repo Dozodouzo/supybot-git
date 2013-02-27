@@ -32,6 +32,8 @@
 Provides Git integration capabilities.
 """
 
+# pylint: disable=C0103
+
 import supybot
 import supybot.world as world
 
@@ -40,7 +42,8 @@ import supybot.world as world
 __version__ = ""
 
 # Replace this with an appropriate author or supybot.Author instance.
-__author__ = supybot.Author('Mike Mueller', 'mmueller', 'mike.mueller@panopticdev.com')
+__author__ = \
+    supybot.Author('Mike Mueller', 'mmueller', 'mike.mueller@panopticdev.com')
 
 # This is a dictionary mapping supybot.Author instances to lists of
 # contributions.
@@ -51,7 +54,7 @@ __url__ = 'http://github.com/mmueller/supybot-git'
 
 import config
 import plugin
-reload(plugin) # In case we're being reloaded.
+reload(plugin)      # In case we're being reloaded.
 # Add more reloads here if you add third-party modules and want them to be
 # reloaded when this plugin is reloaded.  Don't forget to import them as well!
 
