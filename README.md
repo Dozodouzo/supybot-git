@@ -29,6 +29,8 @@ modified the code:
 * The initial cloning of the git repository has been moved to the
   explicit repoadd command.
 * A timeout is used to complete otherwise hanging fetch operations.
+* The enableSnarf configuration value is now defined per repo, not as an
+  overall value.
 
 There's a pull request at Mike's repo pending. Depending on the outcome of
 that this will be long-time separate fork or not.
