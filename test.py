@@ -167,9 +167,9 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
 
     def setUp(self):
         ChannelPluginTestCase.setUp(self)
-        self.clear_repos()
-        conf.supybot.plugins.Git.maxCommitsAtOnce.setValue(3)
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
+        conf.supybot.plugins.Git.maxCommitsAtOnce.setValue(3)
+        self.clear_repos()
         self.assertNotError(
             'repoadd test1 plugins/Git/test-data/git-repo #unavailable')
         self.assertNotError(

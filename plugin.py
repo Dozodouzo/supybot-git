@@ -47,7 +47,6 @@ import supybot.conf as conf
 import supybot.ircmsgs as ircmsgs
 import supybot.callbacks as callbacks
 import supybot.schedule as schedule
-import supybot.log as log
 import supybot.registry as registry
 import supybot.world as world
 
@@ -305,9 +304,7 @@ class _Repository(object):
         if not os.path.exists(options.repo_dir):
             os.makedirs(options.repo_dir)
         self.path = os.path.join(options.repo_dir, options.name)
-
-        if world.testing:
-            self.clone()
+        self.clone()   # FIXME: refactor clone()
 
     name = property(lambda self: self.options.name)
 
@@ -413,24 +410,19 @@ class _Repos(object):
 
 
 class _GitFetcher(threading.Thread):
-    "A thread object to perform long-running Git operations."
-
-    # I don't know of any way to shut down a thread except to have it
-    # check a variable very frequently.
-    SHUTDOWN_CHECK_PERIOD = 0.1     # Seconds
+    "A one-shot thread object to perform long-running Git operations."
 
     def __init__(self, plugin, *args, **kwargs):
         """
-        Takes a list of repositories and a period (in seconds) to poll them.
-        As long as it is running, the repositories will be kept up to date
-        every period seconds (with a git fetch).
+        Given repolist (from plugin) replicates all remote changes
+        to local repo roughly using git pull and git fetch. Schedules
+        a poll_all_repos run after the fetch.
         """
         super(_GitFetcher, self).__init__(*args, **kwargs)
-        self.log = plugin.log
-        self.period = plugin.registryValue('pollPeriod')
-        self.period *= 1.1      # Hacky attempt to avoid resonance
         self.shutdown = False
         self.plugin = plugin
+
+    log = property(lambda self: self.plugin.log)
 
     def stop(self):
         """
@@ -441,31 +433,31 @@ class _GitFetcher(threading.Thread):
 
     def run(self):
         "The main thread method."
-        # Initially wait for half the period to stagger this thread and
-        # the main thread and avoid lock contention.
-        end_time = time.time() + self.period / 2
-        while not self.shutdown:
-            for repository in self.plugin.repos.get():
-                if self.shutdown:
-                    break
-                if repository.lock.acquire(False):
-                    try:
-                        if not repository.repo:
-                            repository.clone()
-                        repository.fetch(repository.timeout)
-                    except GitCommandError as e:
-                        self.log.error("Error in git command: " + str(e),
-                                       exc_info=True)
-                    finally:
-                        repository.lock.release()
-                else:
-                    self.log.info(
-                        'Postponing repository fetch: %s: Locked.' %
-                        repository.name)
-            # Wait for the next periodic check
-            while not self.shutdown and time.time() < end_time:
-                time.sleep(_GitFetcher.SHUTDOWN_CHECK_PERIOD)
-            end_time = time.time() + self.period
+
+        start = time.time()
+        for repository in self.plugin.repos.get():
+            if self.shutdown:
+                return
+            try:
+                with repository.lock:
+                    if not repository.repo:
+                        raise GitPluginException(repository.name +
+                                                 ": not cloned")
+                    repository.fetch(repository.timeout)
+            except GitCommandError as e:
+                self.log.error("Error in git command: " + str(e),
+                                   exc_info=True)
+            except GitPluginException as e:
+                    self.log.warning(str(e))
+        try:
+            schedule.removeEvent('repopoll')
+        except KeyError:
+            pass
+        schedule.addEvent(lambda: Git.poll_all_repos(self.plugin),
+                          time.time(),
+                          'repopoll')
+        self.log.debug("Exiting fetcher thread, elapsed: " +
+                       str(time.time() - start))
 
 
 class _DisplayCtx:
@@ -497,7 +489,7 @@ class Git(callbacks.PluginRegexp):
         # pylint: disable=W0233,W0231
         self.__parent = super(Git, self)
         self.__parent.__init__(irc)
-        self.fetcher = None
+        self.fetcher = _GitFetcher(self)
         plugin_group = conf.supybot.plugins.get(self.name())
         _register_repos(self, plugin_group)
         self._stop_polling()
@@ -507,7 +499,7 @@ class Git(callbacks.PluginRegexp):
             self.log.error(str(e), exc_info=True)
             if 'reply' in dir(irc):
                 irc.reply('Error: %s' % str(e))
-        self._schedule_next_event()
+        self._reset_polling()
 
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
@@ -557,24 +549,28 @@ class Git(callbacks.PluginRegexp):
                 ctx.irc.queueMsg(msg)
                 self._display_some_commits(ctx, commits, branch)
 
-    def _schedule_next_event(self):
-        ''' Schedule next run for gitFetcher. '''
-        period = self.registryValue('pollPeriod')
-        if period > 0:
-            if not self.fetcher or not self.fetcher.isAlive():
-                self.fetcher = _GitFetcher(self)
-                self.fetcher.start()
-            schedule.addEvent(self._poll, time.time() + period,
-                              name=self.name())
-        else:
-            self._stop_polling()
+    def _reset_polling(self, die=False):
+        '''
+        Revoke scheduled events, start a new fetch right now unless
+        die or already running.
+        '''
+        for ev in ['repofetch', 'repopoll']:
+            try:
+                schedule.removeEvent(ev)
+            except KeyError:
+                pass
+        if die or world.testing:
+            return
+        schedule.addPeriodicEvent(lambda: Git.start_fetch(self),
+                                  self.registryValue('pollPeriod'),
+                                 'repofetch',
+                                  not self.fetcher.isAlive())
+        self.log.debug("Restarted polling")
 
     def _poll_repository(self, repository, targets):
         ''' Perform poll of a repo, display changes. '''
-        # Manual non-blocking lock calls here to avoid potentially long
-        # waits (if it fails, hope for better luck in the next _poll).
-        if repository.lock.acquire(False):
-            try:
+        try:
+            with repository.lock:
                 new_commits_by_branch = repository.get_new_commits()
                 for irc, channel in targets:
                     ctx = _DisplayCtx(irc, channel, repository)
@@ -582,41 +578,9 @@ class Git(callbacks.PluginRegexp):
                 for branch in new_commits_by_branch:
                     repository.commit_by_branch[branch] = \
                        repository.get_commit(branch)
-            except GitCommandError as e:
-                self.log.error('Exception in _poll repository %s: %s' %
-                    (repository.options.name, str(e)))
-            finally:
-                repository.lock.release()
-        else:
-            log.info('Postponing repository read: %s: Locked.' %
-                repository.name)
-
-    def _poll(self):
-        ''' Look for and handle new commits in local copy of repo. '''
-        # Note that polling happens in two steps:
-        #
-        # 1. The _GitFetcher class, running its own poll loop, fetches
-        #    repositories to keep the local copies up to date.
-        # 2. This _poll occurs, and looks for new commits in those local
-        #    copies.  (Therefore this function should be quick. If it is
-        #    slow, it may block the entire bot.)
-        for repository in self.repos.get():
-            # Find the IRC/channel pairs to notify
-            targets = []
-            for irc in world.ircs:
-                for channel in repository.options.channels:
-                    if channel in irc.state.channels:
-                        targets.append((irc, channel))
-            if not targets:
-                self.log.info("Skipping %s: not in configured channel(s)." %
-                              repository.name)
-                continue
-            try:
-                self._poll_repository(repository, targets)
-            except Exception, e:                        # pylint: disable=W0703
-                self.log.error('Exception in _poll():' + str(e),
-                                exc_info=True)
-        self._schedule_next_event()
+        except GitCommandError as e:
+            self.log.error('Exception in _poll repository %s: %s' %
+                (repository.options.name, str(e)))
 
     def _stop_polling(self):
         '''
@@ -624,21 +588,14 @@ class Git(callbacks.PluginRegexp):
         this is called in die()
         '''
         # pylint: disable=W0703
-        if self.fetcher:
+        if self.fetcher and self.fetcher.isAlive():
             try:
                 self.fetcher.stop()
                 self.fetcher.join()    # This might take time, but it's safest.
             except Exception, e:
                 self.log.error('Stopping fetcher: %s' % str(e),
                                exc_info=True)
-            self.fetcher = None
-        try:
-            schedule.removeEvent(self.name())
-        except KeyError:
-            pass
-        except Exception, e:
-            self.log.error('Stopping scheduled task: %s' % str(e),
-                            exc_info=True)
+        self._reset_polling(die = True)
 
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
@@ -673,6 +630,48 @@ class Git(callbacks.PluginRegexp):
             ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
             self._display_commits(ctx, {'unknown': [commit]})
             break
+
+    def start_fetch(self):
+        ''' Start next gitFetcher run. '''
+        if not self.registryValue('pollPeriod'):
+            return
+        if self.fetcher and self.fetcher.isAlive():
+            self.log.error("Fetcher running when about to start!")
+            self.fetcher.stop()
+            self.fetcher.join()
+            self.log.info("Stopped fetcher")
+        self.fetcher = _GitFetcher(self)
+        self.fetcher.start()
+
+    def poll_all_repos(self):
+        ''' Look for and handle new commits in local copy of repo. '''
+        # Note that polling happens in three steps:
+        # 1  reset_polling kills all active jobs  and schedules
+        #    start_fetch to be invoked periodically.
+        # 2. start_fetch fires off the one-shot fetching thread which
+        #    handles the long-running git replication.
+        # 3. When done, the fetcher thread schedules a _poll "now"
+        #    The poll takes place in main thread but is quick,
+        #    no remote IO is needed.
+        start = time.time()
+        for repository in self.repos.get():
+            # Find the IRC/channel pairs to notify
+            targets = []
+            for irc in world.ircs:
+                for channel in repository.options.channels:
+                    if channel in irc.state.channels:
+                        targets.append((irc, channel))
+            if not targets:
+                self.log.info("Skipping %s: not in configured channel(s)." %
+                              repository.name)
+                continue
+            try:
+                self._poll_repository(repository, targets)
+            except Exception as e:                      # pylint: disable=W0703
+                self.log.error('Exception in _poll():' + str(e),
+                                exc_info=True)
+        self.log.debug("Exiting poll_all_repos, elapsed: " +
+                       str(time.time() - start))
 
     def die(self):
         ''' Stop all threads.  '''
@@ -718,10 +717,10 @@ class Git(callbacks.PluginRegexp):
             self.repos = _Repos(self)
         except registry.NonExistentRegistryEntry as e:
             irc.reply('Error: %s' % str(e))
-        self._schedule_next_event()
         n = len(self.repos.get())
         irc.reply('Git reinitialized with %d %s.' %
                       (n, _plural(n, 'repository')))
+        self._reset_polling()
 
     rehash = wrap(rehash, [])
 
