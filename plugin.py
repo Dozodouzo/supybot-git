@@ -109,6 +109,11 @@ class GitPluginException(Exception):
     pass
 
 
+def _get_global_option(option):
+    ''' Return a overall plugin option. '''
+    return conf.supybot.plugins.get('git').get(option).value
+
+
 def _plural(count, singular, plural=None):
     ''' Return singular/plural form of singular arg depending on count. '''
     if abs(count) <= 1:
@@ -389,8 +394,8 @@ class _GitFetcher(threading.Thread):
     git fetch. When done schedules a poll_all_repos call and exits.
     """
 
-    def __init__(self, plugin, *args, **kwargs):
-        super(_GitFetcher, self).__init__(*args, **kwargs)
+    def __init__(self, plugin):
+        super(_GitFetcher, self).__init__()
         self.shutdown = False
         self.plugin = plugin
 
@@ -446,6 +451,82 @@ class _DisplayCtx:
     def use_group_header(self):
         ''' Return True if the group header should be applied. '''
         return self.repo.options.group_header and self.kind != self.REPOLOG
+
+
+class _Scheduler(object):
+    ''' Handles scheduling of fetch and poll tasks. '''
+
+    def __init__(self, plugin):
+        self._plugin = plugin
+        self.fetcher = None
+        self.stop()
+        self.reset()
+
+    fetching_alive = \
+        property(lambda self: self.fetcher and self.fetcher.is_alive())
+
+    log = property(lambda self: self._plugin.log)
+
+    def reset(self, die=False):
+        '''
+        Revoke scheduled events, start a new fetch right now unless
+        die or testin.
+        '''
+        for ev in ['repofetch', 'repopoll']:
+            try:
+                schedule.removeEvent(ev)
+            except KeyError:
+                pass
+        if die or world.testing:
+            return
+        pollPeriod = _get_global_option('pollPeriod')
+        if not pollPeriod:
+            self._log.debug("Scheduling: ignoring reset with pollPeriod 0")
+            return
+        schedule.addPeriodicEvent(lambda: _Scheduler.start_fetch(self),
+                                  pollPeriod,
+                                 'repofetch',
+                                  not self.fetching_alive)
+        self._log.debug("Restarted polling")
+
+    def stop(self):
+        '''
+        Stop  the gitFetcher. Never allow an exception to propagate since
+        this is called in die()
+        '''
+        # pylint: disable=W0703
+        if self.fetching_alive:
+            try:
+                self.fetcher.stop()
+                self.fetcher.join()    # This might take time, but it's safest.
+            except Exception, e:
+                self.log.error('Stopping fetcher: %s' % str(e),
+                               exc_info=True)
+        self.reset(die = True)
+
+    def start_fetch(self):
+        ''' Start next gitFetcher run. '''
+        if not _get_global_option('pollPeriod'):
+            return
+        if self.fetching_alive:
+            self.log.error("Fetcher running when about to start!")
+            self.fetcher.stop()
+            self.fetcher.join()
+            self.log.info("Stopped fetcher")
+        self.fetcher = _GitFetcher(self._plugin.repos,
+                                   self._plugin.scheduler,
+                                   self._plugin.log)
+        self.fetcher.start()
+
+    def poll_now(self):
+        ''' Schedule a poll_all_repos run "now". '''
+        try:
+            schedule.removeEvent('repopoll')
+        except KeyError:
+            pass
+        schedule.addEvent(lambda: Git.poll_all_repos(self._plugin),
+                          time.time(),
+                          'repopoll')
 
 
 class Git(callbacks.PluginRegexp):
