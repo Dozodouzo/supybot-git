@@ -42,6 +42,9 @@ def configure(advanced):
 Git = conf.registerPlugin('Git')
 
 conf.registerGroup(Git, 'repos')
+conf.registerGlobalValue(Git, 'repolist',
+        registry.SpaceSeparatedListOfStrings([],
+           "Internal list of configured repos, please don't touch "))
 
 conf.registerGlobalValue(Git, 'repoDir',
     registry.String('git_repositories', """The path where local copies of

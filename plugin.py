@@ -207,10 +207,7 @@ def _register_repo(repo_group):
 def _register_repos(plugin, plugin_group):
     ''' Register the dynamically created repo definitins. '''
     repos = conf.registerGroup(plugin_group, 'repos')
-    conf.registerGlobalValue(plugin_group, 'repolist',
-        registry.String('',
-           "Internal list of configured repos, please don't touch "))
-    repo_list = plugin.registryValue('repolist').split()
+    repo_list = plugin.registryValue('repolist')
     for repo in repo_list:
         repo_group = conf.registerGroup(repos, repo)
         _register_repo(repo_group)
@@ -373,14 +370,14 @@ class _Repos(object):
         with self._lock:
             self._list = repositories
             repolist = [r.name for r in repositories]
-            self._plugin.setRegistryValue('repolist', ' '.join(repolist))
+            self._plugin.setRegistryValue('repolist', repolist)
 
     def append(self, repository):
         ''' Add new repository to shared list. '''
         with self._lock:
             self._list.append(repository)
             repolist = [r.name for r in self._list]
-            self._plugin.setRegistryValue('repolist', ' '.join(repolist))
+            self._plugin.setRegistryValue('repolist', repolist)
 
     def get(self):
         ''' Return copy of the repository list. '''
@@ -753,7 +750,7 @@ class Git(callbacks.PluginRegexp):
         Add a new repository with name, url and a comma-separated list
         of channels which should be connected to this repo.
         """
-        repolist = self.registryValue('repolist').split()
+        repolist = self.registryValue('repolist')
         if repo in repolist:
             irc.reply('Error: repo exists')
             return
