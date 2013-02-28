@@ -394,25 +394,25 @@ class _GitFetcher(threading.Thread):
     git fetch. When done schedules a poll_all_repos call and exits.
     """
 
-    def __init__(self, plugin):
+    def __init__(self, repos, scheduler, log):
         super(_GitFetcher, self).__init__()
-        self.shutdown = False
-        self.plugin = plugin
-
-    log = property(lambda self: self.plugin.log)
+        self._shutdown = False
+        self._repos = repos
+        self._scheduler = scheduler
+        self.log = log
 
     def stop(self):
         """
         Shut down the thread as soon as possible. May take some time if
         inside a long-running fetch operation.
         """
-        self.shutdown = True
+        self._shutdown = True
 
     def run(self):
         start = time.time()
-        for repository in self.plugin.repos.get():
-            if self.shutdown:
-                return
+        for repository in self._repos.get():
+            if self._shutdown:
+                break
             try:
                 with repository.lock:
                     if not repository.repo:
@@ -424,13 +424,7 @@ class _GitFetcher(threading.Thread):
                                    exc_info=True)
             except GitPluginException as e:
                     self.log.warning(str(e))
-        try:
-            schedule.removeEvent('repopoll')
-        except KeyError:
-            pass
-        schedule.addEvent(lambda: Git.poll_all_repos(self.plugin),
-                          time.time(),
-                          'repopoll')
+        self._scheduler.poll_now()
         self.log.debug("Exiting fetcher thread, elapsed: " +
                        str(time.time() - start))
 
@@ -454,23 +448,33 @@ class _DisplayCtx:
 
 
 class _Scheduler(object):
-    ''' Handles scheduling of fetch and poll tasks. '''
+    '''
+    Handles scheduling of fetch and poll tasks.
+
+    Polling happens in three steps:
+     -  reset()  kills all active jobs  and schedules
+        start_fetch to be invoked periodically.
+     -  start_fetch() fires off the one-shot GitFetcher
+        thread which handles the long-running git replication.
+     -  When done, the GitFetcher thread invokes poll_now()
+        This invokes poll_all_repos in main thread but
+        this is quick, (almost) no remote IO is needed.
+    '''
 
     def __init__(self, plugin):
         self._plugin = plugin
         self.fetcher = None
-        self.stop()
         self.reset()
 
     fetching_alive = \
         property(lambda self: self.fetcher and self.fetcher.is_alive())
 
-    log = property(lambda self: self._plugin.log)
+    _log = property(lambda self: self._plugin.log)
 
     def reset(self, die=False):
         '''
         Revoke scheduled events, start a new fetch right now unless
-        die or testin.
+        die or testing.
         '''
         for ev in ['repofetch', 'repopoll']:
             try:
@@ -514,7 +518,7 @@ class _Scheduler(object):
             self.fetcher.join()
             self.log.info("Stopped fetcher")
         self.fetcher = _GitFetcher(self._plugin.repos,
-                                   self._plugin.scheduler,
+                                   self,
                                    self._plugin.log)
         self.fetcher.start()
 
@@ -540,11 +544,10 @@ class Git(callbacks.PluginRegexp):
         # pylint: disable=W0233,W0231
         self.__parent = super(Git, self)
         self.__parent.__init__(irc)
-        self.fetcher = _GitFetcher(self)
         _register_repos(self, conf.supybot.plugins.get(self.name()))
         self.repos = _Repos(self)
-        self._stop_polling()
-        self._reset_polling()
+        self.scheduler = _Scheduler(self)
+
 
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
@@ -594,24 +597,6 @@ class Git(callbacks.PluginRegexp):
                 ctx.irc.queueMsg(msg)
                 self._display_some_commits(ctx, commits, branch)
 
-    def _reset_polling(self, die=False):
-        '''
-        Revoke scheduled events, start a new fetch right now unless
-        die or testin.
-        '''
-        for ev in ['repofetch', 'repopoll']:
-            try:
-                schedule.removeEvent(ev)
-            except KeyError:
-                pass
-        if die or world.testing:
-            return
-        schedule.addPeriodicEvent(lambda: Git.start_fetch(self),
-                                  self.registryValue('pollPeriod'),
-                                 'repofetch',
-                                  not self.fetcher.isAlive())
-        self.log.debug("Restarted polling")
-
     def _poll_repository(self, repository, targets):
         ''' Perform poll of a repo, display changes. '''
         try:
@@ -626,21 +611,6 @@ class Git(callbacks.PluginRegexp):
         except GitCommandError as e:
             self.log.error('Exception in _poll repository %s: %s' %
                 (repository.options.name, str(e)))
-
-    def _stop_polling(self):
-        '''
-        Stop  the gitFetcher. Never allow an exception to propagate since
-        this is called in die()
-        '''
-        # pylint: disable=W0703
-        if self.fetcher and self.fetcher.isAlive():
-            try:
-                self.fetcher.stop()
-                self.fetcher.join()    # This might take time, but it's safest.
-            except Exception, e:
-                self.log.error('Stopping fetcher: %s' % str(e),
-                               exc_info=True)
-        self._reset_polling(die = True)
 
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
@@ -676,28 +646,8 @@ class Git(callbacks.PluginRegexp):
             self._display_commits(ctx, {'unknown': [commit]})
             break
 
-    def start_fetch(self):
-        ''' Start next gitFetcher run. '''
-        if not self.registryValue('pollPeriod'):
-            return
-        if self.fetcher and self.fetcher.isAlive():
-            self.log.error("Fetcher running when about to start!")
-            self.fetcher.stop()
-            self.fetcher.join()
-            self.log.info("Stopped fetcher")
-        self.fetcher = _GitFetcher(self)
-        self.fetcher.start()
-
     def poll_all_repos(self):
         ''' Look for and handle new commits in local copy of repo. '''
-        # Note that polling happens in three steps:
-        # 1  reset_polling kills all active jobs  and schedules
-        #    start_fetch to be invoked periodically.
-        # 2. start_fetch fires off the one-shot fetching thread which
-        #    handles the long-running git replication.
-        # 3. When done, the fetcher thread schedules a _poll_all_repos
-        #    "now". The poll takes place in main thread but is quick,
-        #    (almost) no remote IO is needed.
         start = time.time()
         for repository in self.repos.get():
             # Find the IRC/channel pairs to notify
@@ -720,7 +670,7 @@ class Git(callbacks.PluginRegexp):
 
     def die(self):
         ''' Stop all threads.  '''
-        self._stop_polling()
+        self.scheduler.stop()
         self.__parent.die()
 
     def repolog(self, irc, msg, args, channel, repo, branch, count):
@@ -757,12 +707,12 @@ class Git(callbacks.PluginRegexp):
 
         Reload the settings and restart any period polling.
         """
-        self._stop_polling()
+        self.scheduler.stop()
         self.repos = _Repos(self)
         n = len(self.repos.get())
         irc.reply('Git reinitialized with %d %s.' %
                       (n, _plural(n, 'repository')))
-        self._reset_polling()
+        self.scheduler.stop()
 
     rehash = wrap(rehash, [])
 
