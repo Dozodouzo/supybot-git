@@ -36,25 +36,26 @@ The critical sections are:
      internal lock (all methods are synchronized).
 """
 
-from supybot.commands import optional
-from supybot.commands import commalist
-from supybot.commands import threading
-from supybot.commands import time
-from supybot.commands import wrap
-from supybot.utils.str import pluralize
-
-import supybot.conf as conf
-import supybot.ircmsgs as ircmsgs
-import supybot.callbacks as callbacks
-import supybot.schedule as schedule
-import supybot.registry as registry
-import supybot.world as world
-
 import fnmatch
 import os
 import shutil
 import threading
 import time
+
+from supybot import callbacks
+from supybot import conf
+from supybot import ircmsgs
+from supybot import registry
+from supybot import schedule
+from supybot import world
+from supybot.commands import commalist
+from supybot.commands import optional
+from supybot.commands import threading
+from supybot.commands import time
+from supybot.commands import wrap
+from supybot.utils.str import pluralize
+
+import config
 
 try:
     import git
