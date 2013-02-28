@@ -395,7 +395,7 @@ class _GitFetcher(threading.Thread):
     """
 
     def __init__(self, repos, scheduler, log):
-        super(_GitFetcher, self).__init__()
+        threading.Thread.__init__(self)
         self._shutdown = False
         self._repos = repos
         self._scheduler = scheduler
@@ -542,8 +542,7 @@ class Git(callbacks.PluginRegexp):
 
     def __init__(self, irc):
         # pylint: disable=W0233,W0231
-        self.__parent = super(Git, self)
-        self.__parent.__init__(irc)
+        callbacks.PluginRegexp.__init__(self, irc)
         _register_repos(self, conf.supybot.plugins.get(self.name()))
         self.repos = _Repos(self)
         self.scheduler = _Scheduler(self)
@@ -671,7 +670,7 @@ class Git(callbacks.PluginRegexp):
     def die(self):
         ''' Stop all threads.  '''
         self.scheduler.stop()
-        self.__parent.die()
+        callbacks.PluginRegexp.die(self)
 
     def repolog(self, irc, msg, args, channel, repo, branch, count):
         """ repo [branch [count]]
