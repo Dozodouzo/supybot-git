@@ -261,6 +261,34 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.assertResponse('repokill test2', expected)
         self.assertResponse('rehash', 'Git reinitialized with 1 repository.')
 
+class GitBranchTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
+    channel = '#test'
+    plugins = ('Git',)
+
+    def setUp(self):
+        ChannelPluginTestCase.setUp(self)
+        conf.supybot.plugins.Git.pollPeriod.setValue(0)
+        conf.supybot.plugins.Git.maxCommitsAtOnce.setValue(3)
+        self.clear_repos()
+        self.assertNotError(
+            'repoadd test1 plugins/Git/test-data/git-repo #unavailable')
+        self.assertNotError(
+            'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.assertResponse('rehash', 'Git reinitialized with 2 repositories.')
+
+    def testBranchNonexistent(self):
+        expected = ['No repository named nothing, showing available:',
+            '\x02test2\x02  plugins/Git/test-data/git-repo 4 branches']
+        self.assertResponses('branches nothing', expected)
+
+    def testBranchNotAllowed(self):
+        expected = 'Sorry, not allowed in this channel.'
+        self.assertResponse('branches test1', expected)
+
+    def testBranch(self):
+        expected = 'Watched branches: test1, test2, master, feature'
+        self.assertResponse('branches test2', expected)
+
 
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
