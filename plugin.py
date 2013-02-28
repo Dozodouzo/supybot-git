@@ -460,15 +460,9 @@ class Git(callbacks.PluginRegexp):
         self.__parent = super(Git, self)
         self.__parent.__init__(irc)
         self.fetcher = _GitFetcher(self)
-        plugin_group = conf.supybot.plugins.get(self.name())
-        _register_repos(self, plugin_group)
+        _register_repos(self, conf.supybot.plugins.get(self.name()))
+        self.repos = _Repos(self)
         self._stop_polling()
-        try:
-            self.repos = _Repos(self)
-        except registry.NonExistentRegistryEntry as e:
-            self.log.error(str(e), exc_info=True)
-            if 'reply' in dir(irc):
-                irc.reply('Error: %s' % str(e))
         self._reset_polling()
 
     def _display_some_commits(self, ctx, commits, branch):
@@ -683,10 +677,7 @@ class Git(callbacks.PluginRegexp):
         Reload the settings and restart any period polling.
         """
         self._stop_polling()
-        try:
-            self.repos = _Repos(self)
-        except registry.NonExistentRegistryEntry as e:
-            irc.reply('Error: %s' % str(e))
+        self.repos = _Repos(self)
         n = len(self.repos.get())
         irc.reply('Git reinitialized with %d %s.' %
                       (n, _plural(n, 'repository')))
