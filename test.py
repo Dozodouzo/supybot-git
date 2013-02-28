@@ -230,5 +230,37 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.assertResponses('What about cbe46d8?', expected,
                              usePrefixChar=False)
 
+class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
+    channel = '#test'
+    plugins = ('Git',)
+
+    def setUp(self):
+        ChannelPluginTestCase.setUp(self)
+        conf.supybot.plugins.Git.pollPeriod.setValue(0)
+        conf.supybot.plugins.Git.maxCommitsAtOnce.setValue(3)
+        self.clear_repos()
+        self.assertNotError(
+            'repoadd test1 plugins/Git/test-data/git-repo #unavailable')
+        self.assertNotError(
+            'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.assertResponse('rehash', 'Git reinitialized with 2 repositories.')
+
+    def testKillNonexistent(self):
+        expected = ['No repository named nothing, showing available:',
+                    '\x02test2\x02  plugins/Git/test-data/git-repo 4 branches']
+        self.assertResponses('repolog nothing', expected)
+        self.assertResponse('rehash', 'Git reinitialized with 2 repositories.')
+
+    def testKillBadChannel(self):
+        expected = 'Repository deleted'
+        self.assertResponse('repokill test1', expected)
+        self.assertResponse('rehash', 'Git reinitialized with 1 repository.')
+
+    def testKill(self):
+        expected = "Repository deleted"
+        self.assertResponse('repokill test2', expected)
+        self.assertResponse('rehash', 'Git reinitialized with 1 repository.')
+
+
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
