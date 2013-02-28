@@ -772,6 +772,7 @@ class Git(callbacks.PluginRegexp):
             irc.reply('Error: repo does not exist')
             return
         all_repos.remove(found_repos[0])
+        shutil.rmtree(found_repos[0].path)
         self.repos.set(all_repos)
         repos_group = conf.supybot.plugins.get(self.name()).get('repos')
         try:

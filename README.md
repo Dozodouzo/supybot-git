@@ -238,8 +238,8 @@ lot of disk space for its local clones.
 After each fetch a  poll operation runs (generally pretty quick), including
 a check for any commits that arrived since the last check.
 
-Repository clones are never deleted. If you decide to stop tracking one, you
-may want to go manually delete it to free up disk space.
+Repository clones are deleted by @repokill. To recover from bad upstreams doing
+push -f (or worse) try to run a @repokill + @repoadd cycle.
 
 As usual with Supybot plugins, you can call these commands by themselves or
 with the plugin name prefix, e.g. `@git rehash`.  The latter form is only
