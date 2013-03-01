@@ -67,24 +67,25 @@ disables polling of this repo completely"""
 
 _REPO_OPTIONS = {
     'name':
-         lambda: registry.String('', _NAME_TXT),
+        lambda: registry.String('', _NAME_TXT),
     'url':
-         lambda: registry.String('', _URL_TEXT),
+        lambda: registry.String('', _URL_TEXT),
     'channels':
-         lambda: registry.SpaceSeparatedListOfStrings( '', _CHANNELS_TXT),
+        lambda: registry.SpaceSeparatedListOfStrings('', _CHANNELS_TXT),
     'branches':
-         lambda: registry.String('*', _BRANCHES_TXT),
+        lambda: registry.String('*', _BRANCHES_TXT),
     'commitMessage1':
-         lambda: registry.String('[%n|%b|%a] %m', _MESSAGE1_TXT),
+        lambda: registry.String('[%n|%b|%a] %m', _MESSAGE1_TXT),
     'commitMessage2':
-         lambda: registry.String('', _MESSAGE2_TXT),
+        lambda: registry.String('', _MESSAGE2_TXT),
     'enableSnarf':
-         lambda: registry.Boolean(True, _SNARF_TXT),
+        lambda: registry.Boolean(True, _SNARF_TXT),
     'groupHeader':
-         lambda: registry.Boolean(True, _GROUP_HDR_TXT),
+        lambda: registry.Boolean(True, _GROUP_HDR_TXT),
     'fetchTimeout':
-         lambda: registry.Integer(300, _TIMEOUT_TXT),
+        lambda: registry.Integer(300, _TIMEOUT_TXT),
 }
+
 
 def global_option(option):
     ''' Return a overall plugin option (registered at load time). '''
@@ -94,17 +95,14 @@ def global_option(option):
 def repo_option(reponame, option):
     ''' Return repo-specific option, registering on the fly. '''
     repos = global_option('repos')
-    logger = log.getPluginLogger('git.conf')
     try:
         repo = repos.get(reponame)
     except registry.NonExistentRegistryEntry:
         repo = conf.registerGroup(repos, reponame)
-        logger.debug("Registered repo: " + reponame)
     try:
         return repo.get(option)
     except registry.NonExistentRegistryEntry:
         conf.registerGlobalValue(repo, option, _REPO_OPTIONS[option]())
-        logger.debug('Registering repo option: ' + option)
         return repo.get(option)
 
 
