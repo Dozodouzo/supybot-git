@@ -39,11 +39,8 @@ The critical sections are:
 import fnmatch
 import os
 import shutil
-import threading
-import time
 
 from supybot import callbacks
-from supybot import conf
 from supybot import ircmsgs
 from supybot import registry
 from supybot import schedule
@@ -68,51 +65,9 @@ if not int(git.__version__[2]) == 3:
 from git import GitCommandError
 
 
-_URL_TEXT = "The URL to the git repository, which may be a path on" \
-            " disk, or a URL to a remote repository."""
-
-_NAME_TXT = "This is the nickname you use in all commands that interact " \
-            " that interact with the repository"""
-
-_SNARF_TXT = "Eavesdrop and send commit info if a commit id is found in " \
-             " IRC chat"""
-
-_CHANNELS_TXT = """A space-separated list of channels where
- notifications of new commits will appear.  If you provide more than one
- channel, all channels will receive commit messages.  This is also a weak
- privacy measure; people on other channels will not be able to request
- information about the repository. All interaction with the repository is
- limited to these channels."""
-
-_BRANCHES_TXT = """Space-separated list fo branches to follow for
- this repository. Accepts wildcards, * means all branches, release*
- all branches beginnning with releas.e"""
-
-_MESSAGE1_TXT = """First line of message describing a commit in e. g., log
- or snarf  messages. Constructed from printf-style substitutions.  See
- https://github.com/leamas/supybot-git for details."""
-
-_MESSAGE2_TXT = """Second line of message describing a commit in e. g., log
- or snarf  messages. Often used for a view link. Constructed from printf-style
- substitutions, see https://github.com/leamas/supybot-git for details."""
-
-_GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
- each author is preceded by a single line like 'John le Carre committed
- 5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
- before presenting data for a commit id found in the irc conversation."""
-
-_TIMEOUT_TXT = """Max time for fetch operations (seconds). A value of 0
-disables polling of this repo completely"""
-
-
 class GitPluginException(Exception):
     ''' Common base class for exceptions in this plugin. '''
     pass
-
-
-def _get_global_option(option):
-    ''' Return a overall plugin option. '''
-    return conf.supybot.plugins.get('git').get(option).value
 
 
 def _plural(count, singular, plural=None):
@@ -182,37 +137,6 @@ def _format_message(repository, commit, branch='unknown'):
         result.append(outline.encode('utf-8'))
     return result
 
-def _register_repo(repo_group):
-    ''' Register a repository. '''
-    conf.registerGlobalValue(repo_group, 'name',
-                             registry.String('', _NAME_TXT))
-    conf.registerGlobalValue(repo_group, 'url',
-                             registry.String('', _URL_TEXT))
-    conf.registerGlobalValue(repo_group, 'channels',
-            registry.SpaceSeparatedListOfStrings('', _CHANNELS_TXT))
-    conf.registerGlobalValue(repo_group, 'branches',
-                             registry.String('*', _BRANCHES_TXT))
-    conf.registerGlobalValue(repo_group, 'commitMessage1',
-                             registry.String('[%n|%b|%a] %m',
-                                             _MESSAGE1_TXT))
-    conf.registerGlobalValue(repo_group, 'commitMessage2',
-                             registry.String('', _MESSAGE2_TXT))
-    conf.registerGlobalValue(repo_group, 'enableSnarf',
-                             registry.Boolean(True, _SNARF_TXT))
-    conf.registerGlobalValue(repo_group, 'groupHeader',
-                             registry.Boolean(True, _GROUP_HDR_TXT))
-    conf.registerGlobalValue(repo_group, 'fetchTimeout',
-                             registry.Integer(300, _TIMEOUT_TXT))
-
-
-def _register_repos(plugin, plugin_group):
-    ''' Register the dynamically created repo definitins. '''
-    repos = conf.registerGroup(plugin_group, 'repos')
-    repo_list = plugin.registryValue('repolist')
-    for repo in repo_list:
-        repo_group = conf.registerGroup(repos, repo)
-        _register_repo(repo_group)
-
 
 def _get_branches(option_val, repo, log_):
     ''' Return list of branches in repo matching users's option_val. '''
@@ -236,30 +160,24 @@ class _RepoOptions(object):
     ''' Simple container for option values. '''
     # pylint: disable=R0902
 
-    def __init__(self, plugin, repo_name):
+    def __init__(self, plugin, reponame):
 
-        def get_value(key, default = None):
-            ''' Read a registry value, return default on missing. '''
-            try:
-                key = 'repos.' + repo_name + '.' + key
-                return plugin.registryValue(key)
-            except registry.NonExistentRegistryEntry as e:
-                if default:
-                    return default
-                else:
-                    raise e
+        def get_value(key):
+            ''' Read a registry value. '''
+            return config.repo_option(reponame, key).value
 
-        self.repo_dir = plugin.registryValue('repoDir')
-        self.name = repo_name
+        self.repo_dir = config.global_option('repoDir').value
+        self.name = reponame
         self.url = get_value('url')
         self.channels = get_value('channels')
-        self.branches = get_value('branches', 'master')
-        self.commit_msg = get_value('commitMessage1', '[%s|%b|%a] %m')
+        self.branches = get_value('branches')
+        self.commit_msg = get_value('commitMessage1')
         if get_value('commitMessage2'):
             self.commit_msg += "\n" + get_value('commitMessage2')
-        self.group_header = get_value('group header', True)
-        self.enable_snarf = get_value('enableSnarf', True)
-        self.timeout = get_value('fetchTimeout', 300)
+        self.group_header = get_value('groupHeader')
+        self.enable_snarf = get_value('enableSnarf')
+        self.timeout = get_value('fetchTimeout')
+        self.repo = config.global_option('repos').get(reponame)
 
 
 class _Repository(object):
@@ -323,6 +241,9 @@ class _Repository(object):
             except IndexError:
                 self.log.error('Timeout in fetch() for %s at %s' %
                                    (branch, self.name))
+            except OSError as e:
+                self.log.error("Problem accessing local repo: " +
+                               str(e))
 
     def get_commit(self, sha):
         "Fetch the commit with the given SHA, throws BadObject."
@@ -361,8 +282,7 @@ class _Repos(object):
         self._lock = threading.Lock()
         self._plugin = plugin
         self._list = []
-        repos = conf.supybot.plugins.get(plugin.name()).get('repos')
-        for repo in repos._children.keys():      # pylint: disable=W0212
+        for repo in config.global_option('repolist').value:
             options = _RepoOptions(plugin, repo)
             self.append(_Repository(options, plugin.log))
 
@@ -371,14 +291,14 @@ class _Repos(object):
         with self._lock:
             self._list = repositories
             repolist = [r.name for r in repositories]
-            self._plugin.setRegistryValue('repolist', repolist)
+            config.global_option('repolist').setValue(repolist)
 
     def append(self, repository):
         ''' Add new repository to shared list. '''
         with self._lock:
             self._list.append(repository)
             repolist = [r.name for r in self._list]
-            self._plugin.setRegistryValue('repolist', repolist)
+            config.global_option('repolist').setValue(repolist)
 
     def get(self):
         ''' Return copy of the repository list. '''
@@ -481,7 +401,7 @@ class _Scheduler(object):
                 pass
         if die or world.testing:
             return
-        pollPeriod = _get_global_option('pollPeriod')
+        pollPeriod = config.global_option('pollPeriod').value
         if not pollPeriod:
             self._log.debug("Scheduling: ignoring reset with pollPeriod 0")
             return
@@ -507,8 +427,8 @@ class _Scheduler(object):
         self.reset(die = True)
 
     def start_fetch(self):
-        ''' Start next gitFetcher run. '''
-        if not _get_global_option('pollPeriod'):
+        ''' Start next GitFetcher run. '''
+        if not config.global_option('pollPeriod').value:
             return
         if self.fetching_alive:
             self.log.error("Fetcher running when about to start!")
@@ -541,7 +461,6 @@ class Git(callbacks.PluginRegexp):
     def __init__(self, irc):
         # pylint: disable=W0233,W0231
         callbacks.PluginRegexp.__init__(self, irc)
-        _register_repos(self, conf.supybot.plugins.get(self.name()))
         self.repos = _Repos(self)
         self.scheduler = _Scheduler(self)
 
@@ -745,23 +664,19 @@ class Git(callbacks.PluginRegexp):
 
     branches = wrap(branches, ['channel', 'somethingWithoutSpaces'])
 
-    def repoadd(self, irc, msg, args, channel, repo, url, channels):
+    def repoadd(self, irc, msg, args, channel, reponame, url, channels):
         """ <repository name> <url> <channel[,channel...]>
 
         Add a new repository with name, url and a comma-separated list
         of channels which should be connected to this repo.
         """
-        repolist = self.registryValue('repolist')
-        if repo in repolist:
+        if reponame in config.global_option('repolist').value:
             irc.reply('Error: repo exists')
             return
-        repos = conf.supybot.plugins.get(self.name()).get('repos')
-        _register_repo(conf.registerGroup(repos, repo))
-        key = 'repos.' + repo + '.'
-        self.setRegistryValue(key + 'url', url)
-        self.setRegistryValue(key + 'name', repo)
-        self.setRegistryValue(key + 'channels', channels)
-        options = _RepoOptions(self, repo)
+        config.repo_option(reponame, 'url').setValue(url)
+        config.repo_option(reponame, 'name').setValue(reponame)
+        config.repo_option(reponame, 'channels').setValue(channels)
+        options = _RepoOptions(self, reponame)
         repository = _Repository(options, self.log)
         if os.path.exists(repository.path):
             shutil.rmtree(repository.path)
@@ -793,7 +708,7 @@ class Git(callbacks.PluginRegexp):
         all_repos.remove(found_repos[0])
         shutil.rmtree(found_repos[0].path)
         self.repos.set(all_repos)
-        repos_group = conf.supybot.plugins.get(self.name()).get('repos')
+        repos_group = config.global_option('repos')
         try:
             repos_group.unregister(reponame)
         except registry.NonExistentRegistryEntry:
