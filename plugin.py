@@ -158,50 +158,50 @@ def _get_branches(option_val, repo):
     return branches
 
 
-class _RepoOptions(object):
-    ''' Simple container for option values. '''
-    # pylint: disable=R0902
-
-    def __init__(self, reponame):
-
-        def get_value(key):
-            ''' Read a registry value. '''
-            return config.repo_option(reponame, key).value
-
-        self.repo_dir = config.global_option('repoDir').value
-        self.name = reponame
-        self.url = get_value('url')
-        self.channels = get_value('channels')
-        self.branches = get_value('branches')
-        self.commit_msg = get_value('commitMessage1')
-        if get_value('commitMessage2'):
-            self.commit_msg += "\n" + get_value('commitMessage2')
-        self.group_header = get_value('groupHeader')
-        self.enable_snarf = get_value('enableSnarf')
-        self.timeout = get_value('fetchTimeout')
-        self.repo = config.global_option('repos').get(reponame)
-
-
 class _Repository(object):
     """
-    Represents a git repository being monitored. The repository is critical
-    zone accessed both by main thread and the GitFetcher, guarded by
-    the lock attribute.
+    Represents a git repository being monitored. The repository is a
+    critical zone accessed both by main thread and the GitFetcher,
+    guarded by the lock attribute.
     """
 
-    def __init__(self, options):
+    class Options(object):
+        ''' Simple container for option values. '''
+        # pylint: disable=R0902
+
+        def __init__(self, reponame):
+
+            def get_value(key):
+                ''' Read a registry value. '''
+                return config.repo_option(reponame, key).value
+
+            self.repo_dir = config.global_option('repoDir').value
+            self.name = reponame
+            self.url = get_value('url')
+            self.channels = get_value('channels')
+            self.branches = get_value('branches')
+            self.commit_msg = get_value('commitMessage1')
+            if get_value('commitMessage2'):
+                self.commit_msg += "\n" + get_value('commitMessage2')
+            self.group_header = get_value('groupHeader')
+            self.enable_snarf = get_value('enableSnarf')
+            self.timeout = get_value('fetchTimeout')
+            self.repo = config.global_option('repos').get(reponame)
+
+
+    def __init__(self, reponame):
         """
         Initialize with a repository with the given name and dict of options
         from the config section.
         """
         self.log = log.getPluginLogger('git.repository')
-        self.options = options
+        self.options = self.Options(reponame)
         self.commit_by_branch = {}
         self.lock = threading.Lock()
         self.repo = None
-        if not os.path.exists(options.repo_dir):
-            os.makedirs(options.repo_dir)
-        self.path = os.path.join(options.repo_dir, options.name)
+        if not os.path.exists(self.options.repo_dir):
+            os.makedirs(self.options.repo_dir)
+        self.path = os.path.join(self.options.repo_dir, self.options.name)
         self.clone()   # FIXME: refactor clone()
 
     name = property(lambda self: self.options.name)
@@ -283,8 +283,7 @@ class _Repos(object):
         self._lock = threading.Lock()
         self._list = []
         for repo in config.global_option('repolist').value:
-            options = _RepoOptions(repo)
-            self.append(_Repository(options))
+            self.append(_Repository(repo))
 
     def set(self, repositories):
         ''' Update the repository list. '''
@@ -673,8 +672,7 @@ class Git(callbacks.PluginRegexp):
         config.repo_option(reponame, 'url').setValue(url)
         config.repo_option(reponame, 'name').setValue(reponame)
         config.repo_option(reponame, 'channels').setValue(channels)
-        options = _RepoOptions(reponame)
-        repository = _Repository(options)
+        repository = _Repository(reponame)
         if os.path.exists(repository.path):
             shutil.rmtree(repository.path)
         try:
