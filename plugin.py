@@ -42,6 +42,7 @@ import shutil
 
 from supybot import callbacks
 from supybot import ircmsgs
+from supybot import log
 from supybot import registry
 from supybot import schedule
 from supybot import world
@@ -138,8 +139,9 @@ def _format_message(repository, commit, branch='unknown'):
     return result
 
 
-def _get_branches(option_val, repo, log_):
+def _get_branches(option_val, repo):
     ''' Return list of branches in repo matching users's option_val. '''
+    log_ = log.getPluginLogger('git.get_branches')
     opt_branches = [b.strip() for b in option_val.split()]
     repo.remote().update()
     repo_branches = \
@@ -160,7 +162,7 @@ class _RepoOptions(object):
     ''' Simple container for option values. '''
     # pylint: disable=R0902
 
-    def __init__(self, plugin, reponame):
+    def __init__(self, reponame):
 
         def get_value(key):
             ''' Read a registry value. '''
@@ -187,12 +189,12 @@ class _Repository(object):
     the lock attribute.
     """
 
-    def __init__(self, options, log_):
+    def __init__(self, options):
         """
         Initialize with a repository with the given name and dict of options
         from the config section.
         """
-        self.log = log_
+        self.log = log.getPluginLogger('git.repository')
         self.options = options
         self.commit_by_branch = {}
         self.lock = threading.Lock()
@@ -215,8 +217,7 @@ class _Repository(object):
             git.Git('.').clone(self.options.url, self.path, no_checkout=True)
         self.repo = git.Repo(self.path)
         self.commit_by_branch = {}
-        for branch in _get_branches(
-                                self.options.branches, self.repo, self.log):
+        for branch in _get_branches(self.options.branches, self.repo):
             try:
                 if str(self.repo.active_branch) == branch:
                     self.repo.remote().pull(branch)
@@ -278,13 +279,12 @@ class _Repos(object):
     conf settings.
     '''
 
-    def __init__(self, plugin):
+    def __init__(self):
         self._lock = threading.Lock()
-        self._plugin = plugin
         self._list = []
         for repo in config.global_option('repolist').value:
-            options = _RepoOptions(plugin, repo)
-            self.append(_Repository(options, plugin.log))
+            options = _RepoOptions(repo)
+            self.append(_Repository(options))
 
     def set(self, repositories):
         ''' Update the repository list. '''
@@ -312,12 +312,13 @@ class _GitFetcher(threading.Thread):
     git fetch. When done schedules a poll_all_repos call and exits.
     """
 
-    def __init__(self, repos, scheduler, log):
+    def __init__(self, repos, scheduler):
+
+        self.log = log.getPluginLogger('git.fetcher')
         threading.Thread.__init__(self)
         self._shutdown = False
         self._repos = repos
         self._scheduler = scheduler
-        self.log = log
 
     def stop(self):
         """
@@ -379,15 +380,14 @@ class _Scheduler(object):
         this is quick, (almost) no remote IO is needed.
     '''
 
-    def __init__(self, plugin):
-        self._plugin = plugin
+    def __init__(self, git_):
+        self.log = log.getPluginLogger('git.conf')
+        self._git = git_
         self.fetcher = None
         self.reset()
 
     fetching_alive = \
         property(lambda self: self.fetcher and self.fetcher.is_alive())
-
-    _log = property(lambda self: self._plugin.log)
 
     def reset(self, die=False):
         '''
@@ -403,13 +403,13 @@ class _Scheduler(object):
             return
         pollPeriod = config.global_option('pollPeriod').value
         if not pollPeriod:
-            self._log.debug("Scheduling: ignoring reset with pollPeriod 0")
+            self.log.debug("Scheduling: ignoring reset with pollPeriod 0")
             return
         schedule.addPeriodicEvent(lambda: _Scheduler.start_fetch(self),
                                   pollPeriod,
                                  'repofetch',
                                   not self.fetching_alive)
-        self._log.debug("Restarted polling")
+        self.log.debug("Restarted polling")
 
     def stop(self):
         '''
@@ -435,9 +435,7 @@ class _Scheduler(object):
             self.fetcher.stop()
             self.fetcher.join()
             self.log.info("Stopped fetcher")
-        self.fetcher = _GitFetcher(self._plugin.repos,
-                                   self,
-                                   self._plugin.log)
+        self.fetcher = _GitFetcher(self._git.repos, self._git.scheduler)
         self.fetcher.start()
 
     def poll_now(self):
@@ -446,7 +444,7 @@ class _Scheduler(object):
             schedule.removeEvent('repopoll')
         except KeyError:
             pass
-        schedule.addEvent(lambda: Git.poll_all_repos(self._plugin),
+        schedule.addEvent(lambda: Git.poll_all_repos(self._git),
                           time.time(),
                           'repopoll')
 
@@ -461,9 +459,8 @@ class Git(callbacks.PluginRegexp):
     def __init__(self, irc):
         # pylint: disable=W0233,W0231
         callbacks.PluginRegexp.__init__(self, irc)
-        self.repos = _Repos(self)
+        self.repos = _Repos()
         self.scheduler = _Scheduler(self)
-
 
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
@@ -624,7 +621,7 @@ class Git(callbacks.PluginRegexp):
         Reload the settings and restart any period polling.
         """
         self.scheduler.stop()
-        self.repos = _Repos(self)
+        self.repos = _Repos()
         n = len(self.repos.get())
         irc.reply('Git reinitialized with %d %s.' %
                       (n, _plural(n, 'repository')))
@@ -676,8 +673,8 @@ class Git(callbacks.PluginRegexp):
         config.repo_option(reponame, 'url').setValue(url)
         config.repo_option(reponame, 'name').setValue(reponame)
         config.repo_option(reponame, 'channels').setValue(channels)
-        options = _RepoOptions(self, reponame)
-        repository = _Repository(options, self.log)
+        options = _RepoOptions(reponame)
+        repository = _Repository(options)
         if os.path.exists(repository.path):
             shutil.rmtree(repository.path)
         try:
