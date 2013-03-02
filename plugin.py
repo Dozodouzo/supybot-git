@@ -187,22 +187,20 @@ class _Repository(object):
             self.timeout = get_value('fetchTimeout')
             self.repo = config.global_option('repos').get(reponame)
 
-    def __init__(self, reponame, clone=False):
+    def __init__(self, reponame):
         """
-        Initialize with a repository with the given name and dict of options
-        from the config section.
+        Initialize a repository with the given name. If cloning_done_cb
+        is set, force a git clone. Data is read from supybot configuration.
         """
         self.log = log.getPluginLogger('git.repository')
         self.options = self.Options(reponame)
         self.commit_by_branch = {}
         self.lock = threading.Lock()
         self.repo = None
-        if not os.path.exists(self.options.repo_dir):
-            os.makedirs(self.options.repo_dir)
         self.path = os.path.join(self.options.repo_dir, self.options.name)
-        if clone or world.testing:
+        if world.testing:
             self._clone()
-        self._setup()
+            self.init()
 
     name = property(lambda self: self.options.name)
 
@@ -210,15 +208,37 @@ class _Repository(object):
 
     branches = property(lambda self: self.commit_by_branch.keys())
 
+    @staticmethod
+    def create(reponame, cloning_done_cb = lambda x: True, opts = None):
+        '''
+        Create a new repository, clone and invoke cloning_done_cb on main
+        thread. callback is called with a _Repository or an error msg.
+        opts need to contain at least name, url and channels.
+        '''
+        if not opts:
+            opts = {}
+        for key, value in opts.iteritems():
+            config.repo_option(reponame, key ).setValue(value)
+        r = _Repository(reponame)
+        try:
+            r._clone()                             # pylint: disable=W0212
+            r.init()
+            todo = lambda:  cloning_done_cb(r)
+        except (GitCommandError, git.exc.NoSuchPathError) as e:
+            todo = lambda: cloning_done_cb(str(e))
+        schedule.addEvent(todo, time.time(), 'clonecallback')
+
     def _clone(self):
         "If the repository doesn't exist on disk, clone it."
         # pylint: disable=E0602
+        if not os.path.exists(self.options.repo_dir):
+            os.makedirs(self.options.repo_dir)
         if os.path.exists(self.path):
             shutil.rmtree(self.path)
         git.Git('.').clone(self.options.url, self.path, no_checkout=True)
 
-    def _setup(self):
-        ''' Initiate instance reflecting a cloned directory. '''
+    def init(self):
+        ''' Lazy init, invoked after a clone exists. '''
         self.repo = git.Repo(self.path)
         self.commit_by_branch = {}
         for branch in _get_branches(self.options.branches, self.repo):
@@ -231,6 +251,7 @@ class _Repository(object):
             except GitCommandError as e:
                 self.log.error("Cannot checkout repo branch: " + branch)
                 raise e
+        return self
 
     def fetch(self, timeout=300):
         "Contact git repository and update branches appropriately."
@@ -288,7 +309,7 @@ class _Repos(object):
         self._lock = threading.Lock()
         self._list = []
         for repo in config.global_option('repolist').value:
-            self.append(_Repository(repo))
+            self.append(_Repository(repo).init())
 
     def set(self, repositories):
         ''' Update the repository list. '''
@@ -407,7 +428,7 @@ class _Scheduler(object):
         Revoke scheduled events, start a new fetch right now unless
         die or testing.
         '''
-        for ev in ['repofetch', 'repopoll']:
+        for ev in ['repofetch', 'repopoll', 'repocallback']:
             try:
                 schedule.removeEvent(ev)
             except KeyError:
@@ -460,7 +481,6 @@ class _Scheduler(object):
         schedule.addEvent(lambda: Git.poll_all_repos(self._git),
                           time.time(),
                           'repopoll')
-
 
 class Git(callbacks.PluginRegexp):
     "Please see the README file to configure and use this plugin."
@@ -671,20 +691,23 @@ class Git(callbacks.PluginRegexp):
         Add a new repository with name, url and a comma-separated list
         of channels which should be connected to this repo.
         """
+
+        def cloning_done_cb(result):
+            ''' Callback invoked after cloning si done. '''
+            if isinstance(result, _Repository):
+                self.repos.append(result)
+                irc.reply("Repository created and cloned")
+            else:
+                self.log.info("Cannot clone: " + str(result))
+                irc.reply("Error: Cannot clone repo: " + str(result))
+
         if reponame in config.global_option('repolist').value:
             irc.reply('Error: repo exists')
             return
-        config.repo_option(reponame, 'url').setValue(url)
-        config.repo_option(reponame, 'name').setValue(reponame)
-        config.repo_option(reponame, 'channels').setValue(channels)
-        try:
-            repository = _Repository(reponame, clone = True)
-        except GitCommandError as e:
-            self.log.info("Cannot clone: " + str(e), exc_info=True)
-            irc.reply("Error: Cannot clone repo (%s)." % str(e))
-            return
-        self.repos.append(repository)
-        irc.reply("Repository created and cloned")
+        opts = {'url': url, 'name': reponame, 'channels': channels}
+        t = threading.Thread(target= _Repository.create,
+                             args=(reponame, cloning_done_cb, opts))
+        t.start()
 
     repoadd = wrap(repoadd, ['owner',
                              'channel',
