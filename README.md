@@ -19,7 +19,8 @@ modified the code:
   been changed. Notably there are new commands to create and destroy
   repositories. Several command have been renamed, most to repo\* names
   like repoadd, repolog, repolist in an attempt to make them easy to
-  remember and less likely to clash with other plugins.
+  remember and less likely to clash with other plugins. rehash has
+  been dropped in favor of `reload git`.
 * The logging has been fixed, upstream is broken and does not respect
   configuration. Added stacktraces to some exception handling.
 * Backwards compatibility has been dropped: GitPython 0.1 is not supported,
@@ -221,7 +222,7 @@ Command List
 
 * `branches`: Lists tracked branches for a given repository.
 
-* `rehash`: Reload configuraiton, restarts any polling if applicable.
+* `reload git`: Read new configuration, restart polling.
 
 How Notification Works
 ----------------------
@@ -240,11 +241,6 @@ a check for any commits that arrived since the last check.
 
 Repository clones are deleted by @repokill. To recover from bad upstreams doing
 push -f (or worse) try to run a @repokill + @repoadd cycle.
-
-As usual with Supybot plugins, you can call these commands by themselves or
-with the plugin name prefix, e.g. `@git rehash`.  The latter form is only
-necessary if another plugin has a command called `rehash` as well, causing a
-conflict.
 
 
 Static checking & unit tests

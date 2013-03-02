@@ -24,7 +24,6 @@
 
 # pylint: disable=W0612
 
-from supybot import log
 from supybot import conf
 from supybot import registry
 

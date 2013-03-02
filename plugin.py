@@ -188,7 +188,6 @@ class _Repository(object):
             self.timeout = get_value('fetchTimeout')
             self.repo = config.global_option('repos').get(reponame)
 
-
     def __init__(self, reponame):
         """
         Initialize with a repository with the given name and dict of options
@@ -460,6 +459,11 @@ class Git(callbacks.PluginRegexp):
         callbacks.PluginRegexp.__init__(self, irc)
         self.repos = _Repos()
         self.scheduler = _Scheduler(self)
+        if hasattr(irc, 'reply'):
+            n = len(self.repos.get())
+            msg = 'Git reinitialized with ' + str(n) + ' '
+            msg += _plural(n, 'repository') + '.'
+            irc.reply(msg)
 
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
@@ -613,20 +617,6 @@ class Git(callbacks.PluginRegexp):
                              'somethingWithoutSpaces',
                              optional('somethingWithoutSpaces', 'master'),
                              optional('positiveInt', 1)])
-
-    def rehash(self, irc, msg, args):
-        """(takes no arguments)
-
-        Reload the settings and restart any period polling.
-        """
-        self.scheduler.stop()
-        self.repos = _Repos()
-        n = len(self.repos.get())
-        irc.reply('Git reinitialized with %d %s.' %
-                      (n, _plural(n, 'repository')))
-        self.scheduler.stop()
-
-    rehash = wrap(rehash, [])
 
     def repolist(self, irc, msg, args, channel):
         """(takes no arguments)
