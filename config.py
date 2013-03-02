@@ -104,6 +104,13 @@ def repo_option(reponame, option):
         conf.registerGlobalValue(repo, option, _REPO_OPTIONS[option]())
         return repo.get(option)
 
+def unregister_repo(reponame):
+    ''' Unregister  repository from config dtbse. '''
+    try:
+        global_option('repos').unregister(reponame)
+    except registry.NonExistentRegistryEntry:
+        pass
+
 
 def configure(advanced):
     '''

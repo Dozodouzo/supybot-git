@@ -43,7 +43,6 @@ import shutil
 from supybot import callbacks
 from supybot import ircmsgs
 from supybot import log
-from supybot import registry
 from supybot import schedule
 from supybot import world
 from supybot.commands import commalist
@@ -297,6 +296,15 @@ class _Repos(object):
             self._list.append(repository)
             repolist = [r.name for r in self._list]
             config.global_option('repolist').setValue(repolist)
+
+    def remove(self, repository):
+        ''' Remove repository from list. '''
+        with self._lock:
+            self._list.remove(repository)
+            repolist = [r.name for r in self._list]
+            config.global_option('repolist').setValue(repolist)
+            config.unregister_repo(repository.name)
+
 
     def get(self):
         ''' Return copy of the repository list. '''
@@ -685,19 +693,12 @@ class Git(callbacks.PluginRegexp):
 
         Removes an existing repository given it's name.
         """
-        all_repos = self.repos.get()
-        found_repos = [r for r in all_repos if r.name == reponame]
+        found_repos = [r for r in self.repos.get() if r.name == reponame]
         if not found_repos:
             irc.reply('Error: repo does not exist')
             return
-        all_repos.remove(found_repos[0])
+        self.repos.remove(found_repos[0])
         shutil.rmtree(found_repos[0].path)
-        self.repos.set(all_repos)
-        repos_group = config.global_option('repos')
-        try:
-            repos_group.unregister(reponame)
-        except registry.NonExistentRegistryEntry:
-            pass
         irc.reply('Repository deleted')
 
     repokill = wrap(repokill,
