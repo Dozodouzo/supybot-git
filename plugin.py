@@ -187,7 +187,7 @@ class _Repository(object):
             self.timeout = get_value('fetchTimeout')
             self.repo = config.global_option('repos').get(reponame)
 
-    def __init__(self, reponame):
+    def __init__(self, reponame, clone=False):
         """
         Initialize with a repository with the given name and dict of options
         from the config section.
@@ -200,7 +200,9 @@ class _Repository(object):
         if not os.path.exists(self.options.repo_dir):
             os.makedirs(self.options.repo_dir)
         self.path = os.path.join(self.options.repo_dir, self.options.name)
-        self.clone()   # FIXME: refactor clone()
+        if clone or world.testing:
+            self._clone()
+        self._setup()
 
     name = property(lambda self: self.options.name)
 
@@ -208,11 +210,15 @@ class _Repository(object):
 
     branches = property(lambda self: self.commit_by_branch.keys())
 
-    def clone(self):
+    def _clone(self):
         "If the repository doesn't exist on disk, clone it."
         # pylint: disable=E0602
-        if not os.path.exists(self.path):
-            git.Git('.').clone(self.options.url, self.path, no_checkout=True)
+        if os.path.exists(self.path):
+            shutil.rmtree(self.path)
+        git.Git('.').clone(self.options.url, self.path, no_checkout=True)
+
+    def _setup(self):
+        ''' Initiate instance reflecting a cloned directory. '''
         self.repo = git.Repo(self.path)
         self.commit_by_branch = {}
         for branch in _get_branches(self.options.branches, self.repo):
@@ -222,8 +228,9 @@ class _Repository(object):
                 else:
                     self.repo.remote().fetch(branch + ':' + branch)
                 self.commit_by_branch[branch] = self.repo.commit(branch)
-            except GitCommandError:
+            except GitCommandError as e:
                 self.log.error("Cannot checkout repo branch: " + branch)
+                raise e
 
     def fetch(self, timeout=300):
         "Contact git repository and update branches appropriately."
@@ -670,11 +677,8 @@ class Git(callbacks.PluginRegexp):
         config.repo_option(reponame, 'url').setValue(url)
         config.repo_option(reponame, 'name').setValue(reponame)
         config.repo_option(reponame, 'channels').setValue(channels)
-        repository = _Repository(reponame)
-        if os.path.exists(repository.path):
-            shutil.rmtree(repository.path)
         try:
-            repository.clone()
+            repository = _Repository(reponame, clone = True)
         except GitCommandError as e:
             self.log.info("Cannot clone: " + str(e), exc_info=True)
             irc.reply("Error: Cannot clone repo (%s)." % str(e))
