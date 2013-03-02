@@ -226,7 +226,7 @@ class _Repository(object):
             todo = lambda:  cloning_done_cb(r)
         except (GitCommandError, git.exc.NoSuchPathError) as e:
             todo = lambda: cloning_done_cb(str(e))
-        schedule.addEvent(todo, time.time(), 'clonecallback')
+        _Scheduler.run_callback(todo, 'clonecallback')
 
     def _clone(self):
         "If the repository doesn't exist on disk, clone it."
@@ -346,13 +346,13 @@ class _GitFetcher(threading.Thread):
     git fetch. When done schedules a poll_all_repos call and exits.
     """
 
-    def __init__(self, repos, scheduler):
+    def __init__(self, repos, fetch_done_cb):
 
         self.log = log.getPluginLogger('git.fetcher')
         threading.Thread.__init__(self)
         self._shutdown = False
         self._repos = repos
-        self._scheduler = scheduler
+        self._callback = fetch_done_cb
 
     def stop(self):
         """
@@ -377,7 +377,7 @@ class _GitFetcher(threading.Thread):
                                    exc_info=True)
             except GitPluginException as e:
                     self.log.warning(str(e))
-        self._scheduler.poll_now()
+        _Scheduler.run_callback(self._callback, 'fetch_callback')
         self.log.debug("Exiting fetcher thread, elapsed: " +
                        str(time.time() - start))
 
@@ -409,9 +409,9 @@ class _Scheduler(object):
         start_fetch to be invoked periodically.
      -  start_fetch() fires off the one-shot GitFetcher
         thread which handles the long-running git replication.
-     -  When done, the GitFetcher thread invokes poll_now()
-        This invokes poll_all_repos in main thread but
-        this is quick, (almost) no remote IO is needed.
+     -  When done, the GitFetcher thread invokes Scheduler.run_callback.
+        This invokes poll_all_repos in main thread but this is quick,
+        (almost) no remote IO is needed.
     '''
 
     def __init__(self, git_):
@@ -469,18 +469,19 @@ class _Scheduler(object):
             self.fetcher.stop()
             self.fetcher.join()
             self.log.info("Stopped fetcher")
-        self.fetcher = _GitFetcher(self._git.repos, self._git.scheduler)
+        self.fetcher = _GitFetcher(self._git.repos,
+                                   lambda: Git.poll_all_repos(self._git))
         self.fetcher.start()
 
-    def poll_now(self):
-        ''' Schedule a poll_all_repos run "now". '''
+    @staticmethod
+    def run_callback(callback, id_):
+        ''' Run the callback 'now' on main thread. '''
         try:
-            schedule.removeEvent('repopoll')
+            schedule.removeEvent(id_)
         except KeyError:
             pass
-        schedule.addEvent(lambda: Git.poll_all_repos(self._git),
-                          time.time(),
-                          'repopoll')
+        schedule.addEvent(callback, time.time(), id_)
+
 
 class Git(callbacks.PluginRegexp):
     "Please see the README file to configure and use this plugin."
