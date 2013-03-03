@@ -78,16 +78,7 @@ def _plural(count, singular, plural=None):
     return plural if plural else pluralize(singular)
 
 
-def _get_commits(repo, first, last):
-    ''' Return list of commits in repo from first to last, inclusive.'''
-    rev = "%s..%s" % (first, last)
-    # Workaround for GitPython bug:
-    # https://github.com/gitpython-developers/GitPython/issues/61
-    repo.odb.update_cache()
-    return repo.iter_commits(rev)
-
-
-def _format_message(repository, commit, branch='unknown'):
+def _format_message(options, commit, branch='unknown'):
     """
     Generate an formatted message for IRC from the given commit, using
     the format specified in the config. Returns a list of strings.
@@ -102,15 +93,15 @@ def _format_message(repository, commit, branch='unknown'):
         'C': commit.hexsha,
         'e': commit.author.email,
         'm': commit.message.split('\n')[0],
-        'n': repository.name,
+        'n': options.name,
         'S': ' ',
-        'u': repository.options.url,
+        'u': options.url,
         'r': '\x0f',
         '!': '\x02',
         '%': '%',
     }
     result = []
-    lines = repository.options.commit_msg.split('\n')
+    lines = options.commit_msg.split('\n')
     for line in lines:
         mode = MODE_NORMAL
         outline = ''
@@ -285,10 +276,11 @@ class _Repository(object):
         '''
         new_commits_by_branch = {}
         for branch in self.commit_by_branch:
-            result = _get_commits(self.repo,
-                                  self.commit_by_branch[branch],
-                                  branch)
-            results = list(result)
+            rev = "%s..%s" % (self.commit_by_branch[branch], branch)
+            # Workaround for GitPython bug:
+            # https://github.com/gitpython-developers/GitPython/issues/61
+            self.repo.odb.update_cache()
+            results = list(self.repo.iter_commits(rev))
             new_commits_by_branch[branch] = results
             self.log.debug("Poll: branch: %s last commit: %s, %d commits" %
                            (branch, str(self.commit_by_branch[branch])[:7],
@@ -504,7 +496,7 @@ class Git(callbacks.PluginRegexp):
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
         for commit in commits:
-            lines = _format_message(ctx.repo, commit, branch)
+            lines = _format_message(ctx.repo.options, commit, branch)
             for line in lines:
                 msg = ircmsgs.privmsg(ctx.channel, line)
                 ctx.irc.queueMsg(msg)
