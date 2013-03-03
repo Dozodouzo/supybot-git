@@ -17,21 +17,21 @@ modified the code:
   file is no more)
 * To support multiple branches and configuration several commands has
   been changed. Notably there are new commands to create and destroy
-  repositories. Several command have been renamed, most to repo\* names
+  repositories. Commands have been renamed, to repo\* names
   like repoadd, repolog, repolist in an attempt to make them easy to
   remember and less likely to clash with other plugins. rehash has
   been dropped in favor of `reload git`.
-* The logging has been fixed, upstream is broken and does not respect
-  configuration. Added stacktraces to some exception handling.
+* The logging has been fixed, upstream is using global instance which
+  seems questionable in a threaded context.Added stacktraces to some
+  exception handling.
 * Backwards compatibility has been dropped: GitPython 0.1 is not supported,
   some old commands are not defined, compatility stuff in config is dropped.
 * Static checking using pylint and pep8 has been added.
 * Code has been reorganized to a hopefully more consistent shape.
-* The initial cloning of the git repository has been moved to the
-  explicit repoadd command.
 * A timeout is used to complete otherwise hanging fetch operations. The
   thread design has been revised removing busy-wait and improving
-  scheduling
+  scheduling. New model uses three threads, only the main thread is
+  long-running. One thread handles the git clone in @repoadd command
 * In unittests mock is not used anymore, using a test repo with
   live data instead.
 * This README has been updated, notably with a "Getting Started" section.
