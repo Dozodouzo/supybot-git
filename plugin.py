@@ -711,6 +711,7 @@ class Git(callbacks.PluginRegexp):
         opts = {'url': url, 'name': reponame, 'channels': channels}
         t = threading.Thread(target= _Repository.create,
                              args=(reponame, cloning_done_cb, opts))
+        irc.reply('Cloning of %s started...' % reponame)
         t.start()
 
     repoadd = wrap(repoadd, ['owner',
