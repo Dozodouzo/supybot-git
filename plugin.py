@@ -675,7 +675,7 @@ class Git(callbacks.PluginRegexp):
 
     repolist = wrap(repolist, ['channel'])
 
-    def branches(self, irc, msg, args, channel, repo):
+    def repostat(self, irc, msg, args, channel, repo):
         """ <repository name>
         Display the watched branches for a given repository.
         """
@@ -684,7 +684,7 @@ class Git(callbacks.PluginRegexp):
             return
         irc.reply('Watched branches: ' + ', '.join(repository.branches))
 
-    branches = wrap(branches, ['channel', 'somethingWithoutSpaces'])
+    repostat = wrap(repostat, ['channel', 'somethingWithoutSpaces'])
 
     def repoadd(self, irc, msg, args, channel, reponame, url, channels):
         """ <repository name> <url> <channel[,channel...]>

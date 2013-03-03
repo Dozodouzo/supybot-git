@@ -315,15 +315,15 @@ class GitBranchTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     def testBranchNonexistent(self):
         expected = ['No repository named nothing, showing available:',
             '\x02test2\x02  plugins/Git/test-data/git-repo 4 branches']
-        self.assertResponses('branches nothing', expected)
+        self.assertResponses('repostat nothing', expected)
 
     def testBranchNotAllowed(self):
         expected = 'Sorry, not allowed in this channel.'
-        self.assertResponse('branches test1', expected)
+        self.assertResponse('repostat test1', expected)
 
     def testBranch(self):
         expected = 'Watched branches: test1, test2, master, feature'
-        self.assertResponse('branches test2', expected)
+        self.assertResponse('repostat test2', expected)
 
 
 

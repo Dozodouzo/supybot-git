@@ -109,9 +109,9 @@ Getting started
 ```
 
 * Initially you will follow all branches (the 'branches' config item is '\*') Use
-  the branches command to see branches in you repo:
+  the repostat command to see branches in you repo:
 ```
-    <leamas> @branches leamas-git
+    <leamas> @repostat leamas-git
     <al-bot-test> leamas: Watched branches: master, devel
 ```
 
@@ -220,7 +220,7 @@ Command List
 
 * `repokill`: Remove an  existing repository given it's name.
 
-* `branches`: Lists tracked branches for a given repository.
+* `repostat`: Lists tracked branches for a given repository.
 
 * `reload git`: Read new configuration, restart polling.
 
