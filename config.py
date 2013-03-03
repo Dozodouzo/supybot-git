@@ -104,6 +104,7 @@ def repo_option(reponame, option):
         conf.registerGlobalValue(repo, option, _REPO_OPTIONS[option]())
         return repo.get(option)
 
+
 def unregister_repo(reponame):
     ''' Unregister  repository from config dtbse. '''
     try:

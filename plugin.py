@@ -28,7 +28,8 @@ replication of remote git repositories to local clones. The rest is handled
 by the main thread.
 
 A special case of long-running operation is the creation of new repositories,
-with the related inital git clone operation. ATM, this is in main thread.
+This is done in  separate thread. The repository involved in this is not
+visible for any other thread until cloning is completed.
 
 The critical sections are:
    - The _Repository instances, locked with an instance attribute lock.
@@ -218,12 +219,12 @@ class _Repository(object):
         if not opts:
             opts = {}
         for key, value in opts.iteritems():
-            config.repo_option(reponame, key ).setValue(value)
+            config.repo_option(reponame, key).setValue(value)
         r = _Repository(reponame)
         try:
             r._clone()                             # pylint: disable=W0212
             r.init()
-            todo = lambda:  cloning_done_cb(r)
+            todo = lambda: cloning_done_cb(r)
         except (GitCommandError, git.exc.NoSuchPathError) as e:
             todo = lambda: cloning_done_cb(str(e))
         _Scheduler.run_callback(todo, 'clonecallback')
@@ -332,7 +333,6 @@ class _Repos(object):
             repolist = [r.name for r in self._list]
             config.global_option('repolist').setValue(repolist)
             config.unregister_repo(repository.name)
-
 
     def get(self):
         ''' Return copy of the repository list. '''
