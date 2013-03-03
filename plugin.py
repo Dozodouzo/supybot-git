@@ -224,7 +224,7 @@ class _Repository(object):
         _Scheduler.run_callback(todo, 'clonecallback')
 
     def _clone(self):
-        "If the repository doesn't exist on disk, clone it."
+        "Fix directories and run git-clone"
         # pylint: disable=E0602
         if not os.path.exists(self.options.repo_dir):
             os.makedirs(self.options.repo_dir)
@@ -233,7 +233,7 @@ class _Repository(object):
         git.Git('.').clone(self.options.url, self.path, no_checkout=True)
 
     def init(self):
-        ''' Lazy init, invoked after a clone exists. '''
+        ''' Lazy init invoked when a clone exists, reads config data. '''
         self.repo = git.Repo(self.path)
         self.commit_by_branch = {}
         for branch in _get_branches(self.options.branches, self.repo):
@@ -431,7 +431,7 @@ class _Scheduler(object):
         Revoke scheduled events, start a new fetch right now unless
         die or testing.
         '''
-        for ev in ['repofetch', 'repopoll', 'repocallback']:
+        for ev in ['repofetch', 'repopoll']:
             try:
                 schedule.removeEvent(ev)
             except KeyError:

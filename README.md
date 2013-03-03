@@ -3,7 +3,8 @@ Leamas's supybot-git fork
 
 This branch (master) contains some commits which have been sent as a
 pull request upstream. I have continued the work in the devel branch.
-=======
+
+
 Leamas supybot-git fork
 =======================
 
@@ -175,9 +176,10 @@ for @config. However, structural changes is better done by `repoadd` and
 Commit Messages
 ---------------
 
-Commit messages are produced from a general format string that you define in
-the commitMessage1 and commitMessage2 configuration items (see above). They
-use the following substitution parameters:
+Commit  and snarf messages are produced from a general format string that
+you define in the commitMessage1, commitMessage2, snarfMessage1 and
+snarfMessage 2 configuration items (see above). They use the following
+substitution parameters:
 
     %a       Author name
     %b       Branch being watched
