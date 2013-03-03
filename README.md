@@ -128,7 +128,7 @@ Getting started
 ```
     <leamas> what about 15a74ae?
     <al-bot-test> Talking about 15a74ae?
-    <al-bot-test> [leamas-git|unknown|Alec Leamas] Adapt tests for no ini-file
+    <al-bot-test> I. e., [leamas-git|unknown|Alec Leamas] Adapt tests for no ini-file
 ```
 
 Configuration
@@ -161,11 +161,15 @@ Settings for each repo are below these. To see available settings:
 ```
     @config list plugins.git.repos.test1
     leamas: branches, channels, commitMessage1, commitMessage2, enableSnarf,
-    fetchTimeout, groupHeader, name, and url
+    fetchTimeout, groupHeader, name, snarfMessage1, snarfMessage2, and url
 ```
 
 These variables can be manipulated using the @config command in the same way.
 NOTE! After modifying the variables use `@reload git` to make them effective.
+
+It's possible to edit the config file "by hand" as described in documentation
+for @config. However, structural changes is better done by `repoadd` and
+`repokill` even if the config  file is edited after that.
 
 
 Commit Messages
@@ -199,6 +203,8 @@ As noted above, the default is a simpler version of this:
 
     commitMessage1 = [%s|%b|%a] %m
     commitMessage2 = '' (unset)
+    snarfMessage1  = I. e., [%s|%b|%a] %m
+    snarfMessage2  = ''
 
 Leading space in any message line is discarded. Prepend line with %S if you
 want an indentation.
@@ -214,13 +220,13 @@ Command List
 * `repolist`: List any known repositories configured for the current
   channel.
 
+* `repostat`: Lists tracked branches for a given repository.
+
 * `repoadd`: Adds a new repo given it's name, an url and one or more channels
   which should be connected. The url might be a relative path, interpreted from
   supybot's start directory.
 
 * `repokill`: Remove an  existing repository given it's name.
-
-* `repostat`: Lists tracked branches for a given repository.
 
 * `reload git`: Read new configuration, restart polling.
 

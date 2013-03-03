@@ -78,7 +78,7 @@ def _plural(count, singular, plural=None):
     return plural if plural else pluralize(singular)
 
 
-def _format_message(options, commit, branch='unknown'):
+def _format_message(ctx, commit, branch='unknown'):
     """
     Generate an formatted message for IRC from the given commit, using
     the format specified in the config. Returns a list of strings.
@@ -93,15 +93,15 @@ def _format_message(options, commit, branch='unknown'):
         'C': commit.hexsha,
         'e': commit.author.email,
         'm': commit.message.split('\n')[0],
-        'n': options.name,
+        'n': ctx.repo.options.name,
         'S': ' ',
-        'u': options.url,
+        'u': ctx.repo.options.url,
         'r': '\x0f',
         '!': '\x02',
         '%': '%',
     }
     result = []
-    lines = options.commit_msg.split('\n')
+    lines = ctx.format.split('\n')
     for line in lines:
         mode = MODE_NORMAL
         outline = ''
@@ -174,6 +174,9 @@ class _Repository(object):
             self.commit_msg = get_value('commitMessage1')
             if get_value('commitMessage2'):
                 self.commit_msg += "\n" + get_value('commitMessage2')
+            self.snarf_msg = get_value('snarfMessage1')
+            if get_value('snarfMessage2'):
+                self.snarf_msg += "\n" + get_value('snarfMessage2')
             self.group_header = get_value('groupHeader')
             self.enable_snarf = get_value('enableSnarf')
             self.timeout = get_value('fetchTimeout')
@@ -391,6 +394,14 @@ class _DisplayCtx:
         ''' Return True if the group header should be applied. '''
         return self.repo.options.group_header and self.kind != self.REPOLOG
 
+    @property
+    def format(self):
+        ''' Return actual format line to use. '''
+        if self.kind == self.SNARF:
+            return self.repo.options.snarf_msg
+        else:
+            return self.repo.options.commit_msg
+
 
 class _Scheduler(object):
     '''
@@ -496,7 +507,7 @@ class Git(callbacks.PluginRegexp):
     def _display_some_commits(self, ctx, commits, branch):
         "Display a nicely-formatted list of commits for an author/branch."
         for commit in commits:
-            lines = _format_message(ctx.repo.options, commit, branch)
+            lines = _format_message(ctx, commit, branch)
             for line in lines:
                 msg = ircmsgs.privmsg(ctx.channel, line)
                 ctx.irc.queueMsg(msg)

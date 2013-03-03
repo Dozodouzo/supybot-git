@@ -243,7 +243,7 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     def testSnarf(self):
         expected = [
             "Talking about cbe46d8?",
-            "[test2|unknown|Tyrion Lannister]"
+            "I. e., [test2|unknown|Tyrion Lannister]"
                 " I am the only one getting things done",
         ]
         self.assertResponses('What about cbe46d8?', expected,

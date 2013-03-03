@@ -55,6 +55,14 @@ _MESSAGE2_TXT = """Second line of message describing a commit in e. g., log
  or snarf  messages. Often used for a view link. Constructed from printf-style
  substitutions, see https://github.com/leamas/supybot-git for details."""
 
+_SNARFMSG1_TXT = """First line of message describing a commit in a snarf
+ message. Constructed from printf-style substitutions.  See
+ https://github.com/leamas/supybot-git for details."""
+
+_SNARFMSG2_TXT = """Second line of message describing a commit in
+ a  snarf  message. Often used for a view link. Constructed from printf-style
+ substitutions, see https://github.com/leamas/supybot-git for details."""
+
 _GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
  each author is preceded by a single line like 'John le Carre committed
  5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
@@ -77,6 +85,10 @@ _REPO_OPTIONS = {
         lambda: registry.String('[%n|%b|%a] %m', _MESSAGE1_TXT),
     'commitMessage2':
         lambda: registry.String('', _MESSAGE2_TXT),
+    'snarfMessage1':
+        lambda: registry.String('I. e., [%n|%b|%a] %m', _SNARFMSG1_TXT),
+    'snarfMessage2':
+        lambda: registry.String('', _SNARFMSG2_TXT),
     'enableSnarf':
         lambda: registry.Boolean(True, _SNARF_TXT),
     'groupHeader':
