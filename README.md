@@ -1,53 +1,10 @@
-Leamas's supybot-git fork
--------------------------
-
-This branch (master) contains some commits which have been sent as a
-pull request upstream. I have continued the work in the devel branch.
-
-
-Leamas supybot-git fork
-=======================
-
-For the moment, this is a fork of Mike Muellers excellent work at
-https://github.com/mmueller/supybot-git. For better or worse I have
-modified the code:
-* Made it possible to listen to several branches in the same repo
-  definition.
-* Added an optional group header printed before groups of lines.
-* Moved all configuration to the supybot config system (the git.ini
-  file is no more)
-* To support multiple branches and configuration several commands has
-  been changed. Notably there are new commands to create and destroy
-  repositories. Commands have been renamed, to repo\* names
-  like repoadd, repolog, repolist in an attempt to make them easy to
-  remember and less likely to clash with other plugins. rehash has
-  been dropped in favor of `reload git`.
-* The logging has been fixed, upstream is using global instance which
-  seems questionable in a threaded context.Added stacktraces to some
-  exception handling.
-* Backwards compatibility has been dropped: GitPython 0.1 is not supported,
-  some old commands are not defined, compatility stuff in config is dropped.
-* Static checking using pylint and pep8 has been added.
-* Code has been reorganized to a hopefully more consistent shape.
-* A timeout is used to complete otherwise hanging fetch operations. The
-  thread design has been revised removing busy-wait and improving
-  scheduling. New model uses three threads, only the main thread is
-  long-running. One thread handles the git clone in @repoadd command
-* In unittests mock is not used anymore, using a test repo with
-  live data instead.
-* This README has been updated, notably with a "Getting Started" section.
-
-There's a pull request pending at Mike's repo. Depending on the outcome of
-that this will be long-time separate fork or not.
-
---- end of Alec's addendum
-
 Supybot Git Plugin
 ==================
 This is a plugin for the IRC bot Supybot that introduces the ability to
 monitor Git repositories.  Features:
 
 * Notifies IRC channel of new commits.
+* Reports info on commit SHA:s mentioned in IRC conversations.
 * Display a log of recent commits on command.
 * Monitor as many repository/branch combinations as you like.
 * Privacy: repositories are associated with a channel and cannot be seen from
@@ -57,12 +14,27 @@ monitor Git repositories.  Features:
 NEWS
 ----
 
+### March 5, 2013
+
+* I (i. e., Alec Leamas) forked Mike's original work. Mike and I have agreed on
+  not merging this fork with Mike's so this fork will be maintained separately.
+* It's now possible to track to several (by default all) branches in a repo.
+* All configuration is done in supybot's config system, see Configuration below
+  (no git.ini file anymore).
+* A group header has been added, see screenshots at
+  https://github.com/mmueller/supybot-git/pull/14.
+* New command names (see Command List below).
+* Internally code has improved logging, static checking, improved and simplified
+  threading model, and some other refactoring.
+* Plugin now requires GitPythin 0.3.x  (0.1 compatibility is dropped).
+
+
 ### November 17, 2012
 
 Interface changes:
 
 * Several commands have been renamed.  Sorry for the inconvenience, but it was
-  time to make some common sense usabliity improvements.
+  time to make some common sense usability improvements.
 * Repository definitions now take a `channels` option instead of a single
   `channel`.
 
@@ -147,8 +119,8 @@ To see the general settings:
 Each setting has help info and could be inspected and set using the config
 plugin, see it's documents. Quick crash course using pollPeriod as example:
 * Getting help: `@config help plugins.git.pollPeriod`
-* See actual value: `@config  plugins.git.pollPeriod`
-* Setting value: `@config  plugins.git.pollPeriod 60`
+* See actual value: `@config plugins.git.pollPeriod`
+* Setting value: `@config plugins.git.pollPeriod 60`
 
 The `public` and `repolist` options are internal, please don't touch.
 
@@ -178,7 +150,7 @@ Commit Messages
 
 Commit  and snarf messages are produced from a general format string that
 you define in the commitMessage1, commitMessage2, snarfMessage1 and
-snarfMessage 2 configuration items (see above). They use the following
+snarfMessage2 configuration items (see above). They use the following
 substitution parameters:
 
     %a       Author name
@@ -215,7 +187,7 @@ want an indentation.
 Command List
 ------------
 
-* `repolog`: Takes a repository nickname, a branch  and an optional
+* `repolog`: Takes a repository name, a branch  and an optional
   count parameter (default 1).  Shows the last n commits on that branch
   Only works if the repository is configured for the current channel.
 
@@ -235,8 +207,8 @@ Command List
 How Notification Works
 ----------------------
 
-When a repository is created it's also cloned. After this, a
-thread fetches changes from the remote repo periodically.
+When a repository is created it's also cloned. After this, a thread fetches
+changes from the remote repo periodically.
 
 **Warning #1:** If the repository is big and/or the network is slow, the
 first clone (when creating repo) may take a very long time!
@@ -269,6 +241,3 @@ unit tests - run in supybot home directory
   $ popd
   $ supybot-test  plugins/Git
 ```
-
-
-
