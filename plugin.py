@@ -679,6 +679,16 @@ class Git(callbacks.PluginRegexp):
 
     repostat = wrap(repostat, ['channel', 'somethingWithoutSpaces'])
 
+    def gitconf(self, irc, msg, args):
+        """ Takes no arguments
+
+        Display overall common configuration for all repositories.
+        """
+        for option in ['maxCommitsAtOnce', 'pollPeriod', 'repoDir']:
+            irc.reply(option + ': ' + str(config.global_option(option)))
+
+    gitconf = wrap(gitconf, [])
+
     def repoconf(self, irc, msg, args, channel, repo):
         """ <repository name>
 

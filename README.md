@@ -207,6 +207,8 @@ Command List
 
 * `repoconf`: Display configuration for a repository.
 
+* `gitconf`: Display overall, common configuraiton for all repositories.
+
 * `reload git`: Read new configuration, restart polling.
 
 * `githelp` : Display url to help (i. e., this file).
