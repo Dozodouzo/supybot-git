@@ -226,7 +226,6 @@ class _Repository(object):
 
     def _clone(self):
         "Fix directories and run git-clone"
-        # pylint: disable=E0602
         if not os.path.exists(self.options.repo_dir):
             os.makedirs(self.options.repo_dir)
         if os.path.exists(self.path):
@@ -270,7 +269,6 @@ class _Repository(object):
 
     def get_commit(self, sha):
         "Fetch the commit with the given SHA, throws BadObject."
-        # pylint: disable=E0602
         return self.repo.commit(sha)
 
     def get_new_commits(self):
@@ -490,7 +488,6 @@ class Git(callbacks.PluginRegexp):
     unaddressedRegexps = ['_snarf']
 
     def __init__(self, irc):
-        # pylint: disable=W0233,W0231
         callbacks.PluginRegexp.__init__(self, irc)
         self.repos = _Repos()
         self.scheduler = _Scheduler(self)
