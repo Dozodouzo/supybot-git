@@ -22,19 +22,24 @@
 
 """
 A Supybot plugin that monitors and interacts with git repositories.
+See README for configuration and usage.
 
 This code is threaded. A separate thread run the potential long-running
 replication of remote git repositories to local clones. The rest is handled
 by the main thread.
 
 A special case of long-running operation is the creation of new repositories,
-This is done in  separate thread. The repository involved in this is not
+This is done in a separate thread. The repository involved in this is not
 visible for any other thread until cloning is completed.
 
 The critical sections are:
    - The _Repository instances, locked with an instance attribute lock.
    - The Repos instance (repos) in the Git plugin, locked by a
      internal lock (all methods are synchronized).
+
+See: http://pythonhosted.org/GitPython/0.3.1/reference.html
+See: The supybot docs, notably ADVANCED_PLUGIN_CONFIG.rst and
+     ADVANCED_PLUGIN_TESTING.rst.
 """
 
 import fnmatch
