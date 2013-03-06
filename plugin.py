@@ -423,11 +423,10 @@ class _Scheduler(object):
         Revoke scheduled events, start a new fetch right now unless
         die or testing.
         '''
-        for ev in ['repofetch', 'repopoll']:
-            try:
-                schedule.removeEvent(ev)
-            except KeyError:
-                pass
+        try:
+            schedule.removeEvent('repofetch')
+        except KeyError:
+            pass
         if die or world.testing:
             return
         pollPeriod = config.global_option('pollPeriod').value
