@@ -200,8 +200,6 @@ class _Repository(object):
 
     name = property(lambda self: self.options.name)
 
-    timeout = property(lambda self: self.options.timeout)
-
     branches = property(lambda self: self.commit_by_branch.keys())
 
     @staticmethod
@@ -248,12 +246,12 @@ class _Repository(object):
                 raise e
         return self
 
-    def fetch(self, timeout=300):
+    def fetch(self):
         "Contact git repository and update branches appropriately."
         self.repo.remote().update()
         for branch in self.branches:
             try:
-                timer = threading.Timer(timeout, lambda: [][5])
+                timer = threading.Timer(self.options.timeout, lambda: [][5])
                 timer.start()
                 if str(self.repo.active_branch) == branch:
                     self.repo.remote().pull(branch)
@@ -362,7 +360,7 @@ class _GitFetcher(threading.Thread):
                 break
             try:
                 with repository.lock:
-                    repository.fetch(repository.timeout)
+                    repository.fetch()
             except GitCommandError as e:
                 self.log.error("Error in git command: " + str(e),
                                    exc_info=True)
