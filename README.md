@@ -204,6 +204,8 @@ Command List
 
 * `reload git`: Read new configuration, restart polling.
 
+* `githelp` : Display url to help (i. e., this file).
+
 How Notification Works
 ----------------------
 

@@ -66,6 +66,9 @@ if not int(git.__version__[2]) == 3:
 from git import GitCommandError
 
 
+HELP_URL = 'https://github.com/leamas/supybot-git'
+
+
 class GitPluginException(Exception):
     ''' Common base class for exceptions in this plugin. '''
     pass
@@ -674,6 +677,16 @@ class Git(callbacks.PluginRegexp):
         irc.reply('Watched branches: ' + ', '.join(repository.branches))
 
     repostat = wrap(repostat, ['channel', 'somethingWithoutSpaces'])
+
+    def githelp(self, irc, msg, args):
+        """ Takes no arguments
+
+        Display the help url.
+        """
+        irc.reply('See: ' + HELP_URL)
+
+    githelp = wrap(githelp, [])
+
 
     def repoadd(self, irc, msg, args, channel, reponame, url, channels):
         """ <repository name> <url> <channel[,channel...]>
