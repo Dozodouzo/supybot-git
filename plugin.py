@@ -356,15 +356,10 @@ class _GitFetcher(threading.Thread):
                 break
             try:
                 with repository.lock:
-                    if not repository.repo:
-                        raise GitPluginException(repository.name +
-                                                 ": not cloned")
                     repository.fetch(repository.timeout)
             except GitCommandError as e:
                 self.log.error("Error in git command: " + str(e),
                                    exc_info=True)
-            except GitPluginException as e:
-                    self.log.warning(str(e))
         _Scheduler.run_callback(self._callback, 'fetch_callback')
         self.log.debug("Exiting fetcher thread, elapsed: " +
                        str(time.time() - start))
