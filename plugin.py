@@ -709,10 +709,14 @@ class Git(callbacks.PluginRegexp):
             irc.reply('Error: repo exists')
             return
         opts = {'url': url, 'name': reponame, 'channels': channels}
-        t = threading.Thread(target= _Repository.create,
-                             args=(reponame, cloning_done_cb, opts))
-        irc.reply('Cloning of %s started...' % reponame)
+        if world.testing:
+            _Repository.create(reponame, cloning_done_cb, opts)
+            irc.reply("Repository created and cloned")
+            return
+        t = threading.Thread(target = _Repository.create,
+                             args = (reponame, cloning_done_cb, opts))
         t.start()
+        irc.reply('Cloning of %s started...' % reponame)
 
     repoadd = wrap(repoadd, ['owner',
                              'channel',

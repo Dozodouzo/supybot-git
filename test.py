@@ -115,6 +115,7 @@ class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.assertResponse(
             'repoadd test7 plugins/Git/test-data/git-repo #test',
             'Repository created and cloned')
+        self.getMsg(' ')
         expected = ['Git reinitialized with 1 repository.',
                     'The operation succeeded.'
         ]
@@ -131,10 +132,13 @@ class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
         self.assertNotError(
             'repoadd test1 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         self.assertNotError(
             'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         self.assertNotError(
             'repoadd test3 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         expected = ['Git reinitialized with 3 repositories.',
                     'The operation succeeded.'
         ]
@@ -159,10 +163,13 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         conf.supybot.plugins.Git.pollPeriod.setValue(0)
         self.assertNotError(
             'repoadd test1 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         self.assertNotError(
             'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         self.assertNotError(
             'repoadd test3 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         expected = ['Git reinitialized with 3 repositories.',
                     'The operation succeeded.'
         ]
@@ -188,8 +195,10 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.clear_repos()
         self.assertNotError(
             'repoadd test1 plugins/Git/test-data/git-repo #unavailable')
+        self.getMsg(' ')
         self.assertNotError(
             'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
@@ -261,8 +270,10 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.clear_repos()
         self.assertNotError(
             'repoadd test1 plugins/Git/test-data/git-repo #unavailable')
+        self.getMsg(' ')
         self.assertNotError(
             'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
@@ -305,8 +316,10 @@ class GitBranchTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.clear_repos()
         self.assertNotError(
             'repoadd test1 plugins/Git/test-data/git-repo #unavailable')
+        self.getMsg(' ')
         self.assertNotError(
             'repoadd test2 plugins/Git/test-data/git-repo #test')
+        self.getMsg(' ')
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
