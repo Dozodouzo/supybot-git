@@ -590,10 +590,10 @@ class Git(callbacks.PluginRegexp):
             self._display_commits(ctx, {'unknown': [commit]})
             break
 
-    def poll_all_repos(self):
+    def poll_all_repos(self, repolist = None, throw = False):
         ''' Look for and handle new commits in local copy of repo. '''
         start = time.time()
-        for repository in self.repos.get():
+        for repository in repolist if repolist else self.repos.get():
             # Find the IRC/channel pairs to notify
             targets = []
             for irc in world.ircs:
@@ -609,6 +609,8 @@ class Git(callbacks.PluginRegexp):
             except Exception as e:                      # pylint: disable=W0703
                 self.log.error('Exception in _poll():' + str(e),
                                 exc_info=True)
+                if throw:
+                    raise(e)
         self.log.debug("Exiting poll_all_repos, elapsed: " +
                        str(time.time() - start))
 
@@ -676,6 +678,28 @@ class Git(callbacks.PluginRegexp):
         irc.reply('Watched branches: ' + ', '.join(repository.branches))
 
     repostat = wrap(repostat, ['channel', 'somethingWithoutSpaces'])
+
+    def repopoll(self, irc, msg, args, channel, repo):
+        """ [repository name]
+        Poll a named repository, or all if none given.
+        """
+        if repo:
+            repository = self._parse_repo(irc, msg, repo, channel)
+            if not repository:
+                return
+            repos = [repository]
+        else:
+            repos = self.repos.get()
+        try:
+            self.poll_all_repos(repos, throw = True)
+            irc.replySuccess()
+        except Exception as e:              # pylint: disable=W0703
+            irc.reply('Error: ' + str(e))
+
+    repopoll = wrap(repopoll, ['owner',
+                               'channel',
+                               optional('somethingWithoutSpaces')])
+
 
     def githelp(self, irc, msg, args):
         """ Takes no arguments
