@@ -51,7 +51,7 @@ from supybot.commands import optional
 from supybot.commands import threading
 from supybot.commands import time
 from supybot.commands import wrap
-from supybot.utils.str import pluralize
+from supybot.utils.str import nItems
 
 import config
 
@@ -69,13 +69,6 @@ from git import GitCommandError
 class GitPluginException(Exception):
     ''' Common base class for exceptions in this plugin. '''
     pass
-
-
-def _plural(count, singular, plural=None):
-    ''' Return singular/plural form of singular arg depending on count. '''
-    if abs(count) <= 1:
-        return singular
-    return plural if plural else pluralize(singular)
 
 
 def _format_message(ctx, commit, branch='unknown'):
@@ -500,8 +493,7 @@ class Git(callbacks.PluginRegexp):
         self.scheduler = _Scheduler(self)
         if hasattr(irc, 'reply'):
             n = len(self.repos.get())
-            msg = 'Git reinitialized with ' + str(n) + ' '
-            msg += _plural(n, 'repository') + '.'
+            msg = 'Git reinitialized with ' + nItems(n, 'repository') + '.'
             irc.reply(msg)
 
     def _display_some_commits(self, ctx, commits, branch):
@@ -667,13 +659,12 @@ class Git(callbacks.PluginRegexp):
         if not repositories:
             irc.reply('No repositories configured for this channel.')
             return
-        fmt = '\x02%(name)s\x02  %(url)s %(cnt)d %(branch)s'
+        fmt = '\x02%(name)s\x02  %(url)s %(branch)s'
         for r in repositories:
             irc.reply(fmt % {
                 'name': r.name,
                 'url': r.options.url,
-                'cnt': len(r.branches),
-                'branch': _plural(len(r.branches), 'branch')
+                'branch': nItems(len(r.branches), 'branch')
             })
 
     repolist = wrap(repolist, ['channel'])

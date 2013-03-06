@@ -89,7 +89,7 @@ class PluginTestCaseUtilMixin(object):
         conf.supybot.plugins.Git.repolist.setValue('')
         self.assertNotError('reload Git')
         expected = ['The operation succeeded.',
-                    'Git reinitialized with 0 repository.',
+                    'Git reinitialized with 0 repositories.',
                     'The operation succeeded.'
         ]
         self.assertResponses('reload git', expected)
@@ -105,7 +105,7 @@ class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.assertNotError('register suptest suptest', private=True)
 
     def testReloadEmpty(self):
-        expected = ['Git reinitialized with 0 repository.',
+        expected = ['Git reinitialized with 0 repositories.',
                     'The operation succeeded.'
         ]
         self.assertResponses('reload git', expected)
