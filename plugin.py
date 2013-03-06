@@ -537,21 +537,6 @@ class Git(callbacks.PluginRegexp):
             n = len(self.repos.get())
             irc.reply('Git reinitialized with %s.' % nItems(n, 'repository'))
 
-    def _poll_repository(self, repository, targets):
-        ''' Perform poll of a repo, display changes. '''
-        try:
-            with repository.lock:
-                new_commits_by_branch = repository.get_new_commits()
-                for irc, channel in targets:
-                    ctx = _DisplayCtx(irc, channel, repository)
-                    ctx.display_commits(new_commits_by_branch)
-                for branch in new_commits_by_branch:
-                    repository.commit_by_branch[branch] = \
-                       repository.get_commit(branch)
-        except GitCommandError as e:
-            self.log.error('Exception in _poll repository %s: %s' %
-                (repository.options.name, str(e)))
-
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
         matches = filter(lambda r: r.options.name == repo,
@@ -588,6 +573,18 @@ class Git(callbacks.PluginRegexp):
 
     def poll_all_repos(self, repolist = None, throw = False):
         ''' Look for and handle new commits in local copy of repo. '''
+
+        def poll_repository(repository, targets):
+            ''' Perform poll of a repo, determine changes. '''
+            with repository.lock:
+                new_commits_by_branch = repository.get_new_commits()
+                for irc, channel in targets:
+                    ctx = _DisplayCtx(irc, channel, repository)
+                    ctx.display_commits(new_commits_by_branch)
+                for branch in new_commits_by_branch:
+                    repository.commit_by_branch[branch] = \
+                       repository.get_commit(branch)
+
         start = time.time()
         for repository in repolist if repolist else self.repos.get():
             # Find the IRC/channel pairs to notify
@@ -601,7 +598,7 @@ class Git(callbacks.PluginRegexp):
                               repository.name)
                 continue
             try:
-                self._poll_repository(repository, targets)
+                poll_repository(repository, targets)
             except Exception as e:                      # pylint: disable=W0703
                 self.log.error('Exception in _poll():' + str(e),
                                 exc_info=True)
