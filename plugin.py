@@ -150,6 +150,43 @@ def _get_branches(option_val, repo):
     return branches
 
 
+def _poll_all_repos(repolist, throw = False):
+    '''Find and store new commits in repo.new_commits_by_branch. '''
+
+    def poll_repository(repository, targets):
+        ''' Perform poll of a repo, determine changes. '''
+        with repository.lock:
+            new_commits_by_branch = repository.get_new_commits()
+            for irc, channel in targets:
+                ctx = _DisplayCtx(irc, channel, repository)
+                ctx.display_commits(new_commits_by_branch)
+            for branch in new_commits_by_branch:
+                repository.commit_by_branch[branch] = \
+                   repository.get_commit(branch)
+
+    start = time.time()
+    _log = log.getPluginLogger('git.pollAllRepos')
+    for repository in repolist:
+        # Find the IRC/channel pairs to notify
+        targets = []
+        for irc in world.ircs:
+            for channel in repository.options.channels:
+                if channel in irc.state.channels:
+                    targets.append((irc, channel))
+        if not targets:
+            _log.info("Skipping %s: not in configured channel(s)." %
+                          repository.name)
+            continue
+        try:
+            poll_repository(repository, targets)
+        except Exception as e:                      # pylint: disable=W0703
+            _log.error('Exception in _poll():' + str(e), exc_info=True)
+            if throw:
+                raise(e)
+    _log.debug("Exiting poll_all_repos, elapsed: " +
+                   str(time.time() - start))
+
+
 class _Repository(object):
     """
     Represents a git repository being monitored. The repository is a
@@ -454,9 +491,10 @@ class _Scheduler(object):
         (almost) no remote IO is needed.
     '''
 
-    def __init__(self, git_):
+    def __init__(self, repos, fetch_done_cb):
+        self._fetch_done_cb = fetch_done_cb
+        self._repos = repos
         self.log = log.getPluginLogger('git.conf')
-        self._git = git_
         self.fetcher = None
         self.reset()
 
@@ -508,8 +546,7 @@ class _Scheduler(object):
             self.fetcher.stop()
             self.fetcher.join()
             self.log.info("Stopped fetcher")
-        self.fetcher = _GitFetcher(self._git.repos,
-                                   lambda: Git.poll_all_repos(self._git))
+        self.fetcher = _GitFetcher(self._repos, self._fetch_done_cb)
         self.fetcher.start()
 
     @staticmethod
@@ -527,20 +564,20 @@ class Git(callbacks.PluginRegexp):
     # pylint: disable=R0904
 
     threaded = True
-    unaddressedRegexps = ['_snarf']
+    unaddressedRegexps = ['snarf_sha']
 
     def __init__(self, irc):
         callbacks.PluginRegexp.__init__(self, irc)
         self.repos = _Repos()
-        self.scheduler = _Scheduler(self)
+        fetch_done_cb = lambda: _poll_all_repos(self.repos.get())
+        self.scheduler = _Scheduler(self.repos, fetch_done_cb)
         if hasattr(irc, 'reply'):
             n = len(self.repos.get())
             irc.reply('Git reinitialized with %s.' % nItems(n, 'repository'))
 
     def _parse_repo(self, irc, msg, repo, channel):
         """ Parse first parameter as a repo, return repository or None. """
-        matches = filter(lambda r: r.options.name == repo,
-                         self.repos.get())
+        matches = filter(lambda r: r.name == repo, self.repos.get())
         if not matches:
             irc.reply('No repository named %s, showing available:'
                       % repo)
@@ -554,8 +591,15 @@ class Git(callbacks.PluginRegexp):
             return None
         return repository
 
-    def _snarf(self, irc, msg, match):
+    def die(self):
+        ''' Stop all threads.  '''
+        self.scheduler.stop()
+        callbacks.PluginRegexp.die(self)
+
+    def snarf_sha(self, irc, msg, match):
         r"""\b(?P<sha>[0-9a-f]{6,40})\b"""
+        # docstring (ab)used for plugin introspection. Called by
+        # framework if string matching regexp above is found in chat.
         sha = match.group('sha')
         channel = msg.args[0]
         repositories = [r for r in self.repos.get()
@@ -570,47 +614,6 @@ class Git(callbacks.PluginRegexp):
             ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
             ctx.display_commits({'unknown': [commit]})
             break
-
-    def poll_all_repos(self, repolist = None, throw = False):
-        ''' Look for and handle new commits in local copy of repo. '''
-
-        def poll_repository(repository, targets):
-            ''' Perform poll of a repo, determine changes. '''
-            with repository.lock:
-                new_commits_by_branch = repository.get_new_commits()
-                for irc, channel in targets:
-                    ctx = _DisplayCtx(irc, channel, repository)
-                    ctx.display_commits(new_commits_by_branch)
-                for branch in new_commits_by_branch:
-                    repository.commit_by_branch[branch] = \
-                       repository.get_commit(branch)
-
-        start = time.time()
-        for repository in repolist if repolist else self.repos.get():
-            # Find the IRC/channel pairs to notify
-            targets = []
-            for irc in world.ircs:
-                for channel in repository.options.channels:
-                    if channel in irc.state.channels:
-                        targets.append((irc, channel))
-            if not targets:
-                self.log.info("Skipping %s: not in configured channel(s)." %
-                              repository.name)
-                continue
-            try:
-                poll_repository(repository, targets)
-            except Exception as e:                      # pylint: disable=W0703
-                self.log.error('Exception in _poll():' + str(e),
-                                exc_info=True)
-                if throw:
-                    raise(e)
-        self.log.debug("Exiting poll_all_repos, elapsed: " +
-                       str(time.time() - start))
-
-    def die(self):
-        ''' Stop all threads.  '''
-        self.scheduler.stop()
-        callbacks.PluginRegexp.die(self)
 
     def repolog(self, irc, msg, args, channel, repo, branch, count):
         """ repo [branch [count]]
@@ -663,6 +666,7 @@ class Git(callbacks.PluginRegexp):
 
     def repostat(self, irc, msg, args, channel, repo):
         """ <repository name>
+
         Display the watched branches for a given repository.
         """
         repository = self._parse_repo(irc, msg, repo, channel)
@@ -703,6 +707,7 @@ class Git(callbacks.PluginRegexp):
 
     def repopoll(self, irc, msg, args, channel, repo):
         """ [repository name]
+
         Poll a named repository, or all if none given.
         """
         if repo:
@@ -713,7 +718,7 @@ class Git(callbacks.PluginRegexp):
         else:
             repos = self.repos.get()
         try:
-            self.poll_all_repos(repos, throw = True)
+            _poll_all_repos(repos, throw = True)
             irc.replySuccess()
         except Exception as e:              # pylint: disable=W0703
             irc.reply('Error: ' + str(e))
