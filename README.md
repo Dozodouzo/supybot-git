@@ -205,6 +205,8 @@ Command List
 
 * `repopoll`: Run a poll on a repository if given one, else poll all of them.
 
+* `repoconf`: Display configuration for a repository.
+
 * `reload git`: Read new configuration, restart polling.
 
 * `githelp` : Display url to help (i. e., this file).

@@ -679,6 +679,25 @@ class Git(callbacks.PluginRegexp):
 
     repostat = wrap(repostat, ['channel', 'somethingWithoutSpaces'])
 
+    def repoconf(self, irc, msg, args, channel, repo):
+        """ <repository name>
+
+        Display configuration for a given repository.
+        """
+        if not self._parse_repo(irc, msg, repo, channel):
+            return
+        for key, group in config.global_option('repos').getValues():
+            if key.endswith('.' + repo):
+                repogroup = group
+                break
+        else:
+            irc.reply("Internal error: can't find repo?!")
+            return
+        for key, option in repogroup.getValues():
+            irc.reply(key.rsplit('.', 1)[1] + ': ' + str(option.value))
+
+    repoconf = wrap(repoconf, ['channel', 'somethingWithoutSpaces'])
+
     def repopoll(self, irc, msg, args, channel, repo):
         """ [repository name]
         Poll a named repository, or all if none given.
@@ -700,7 +719,6 @@ class Git(callbacks.PluginRegexp):
                                'channel',
                                optional('somethingWithoutSpaces')])
 
-
     def githelp(self, irc, msg, args):
         """ Takes no arguments
 
@@ -709,7 +727,6 @@ class Git(callbacks.PluginRegexp):
         irc.reply('See: ' + HELP_URL)
 
     githelp = wrap(githelp, [])
-
 
     def repoadd(self, irc, msg, args, channel, reponame, url, channels):
         """ <repository name> <url> <channel[,channel...]>
