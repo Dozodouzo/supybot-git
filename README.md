@@ -155,7 +155,7 @@ snarfMessage2 configuration items (see above). They use the following
 substitution parameters:
 
     %a       Author name
-    %b       Branch being watched
+    %b       Branch being watched ('unknown' in snarf messages).
     %c       Commit SHA (first 7 digits)
     %C       Commit SHA (entire 40 digits)
     %e       Author email

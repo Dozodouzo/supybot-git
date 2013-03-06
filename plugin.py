@@ -185,8 +185,8 @@ class _Repository(object):
 
     def __init__(self, reponame):
         """
-        Initialize a repository with the given name. If cloning_done_cb
-        is set, force a git clone. Data is read from supybot configuration.
+        Initialize a repository with the given name. Setup data is read
+        from supybot registry.
         """
         self.log = log.getPluginLogger('git.repository')
         self.options = self.Options(reponame)
@@ -231,7 +231,7 @@ class _Repository(object):
         git.Git('.').clone(self.options.url, self.path, no_checkout=True)
 
     def init(self):
-        ''' Lazy init invoked when a clone exists, reads config data. '''
+        ''' Lazy init invoked when a clone exists, reads repo data. '''
         self.repo = git.Repo(self.path)
         self.commit_by_branch = {}
         for branch in _get_branches(self.options.branches, self.repo):
@@ -335,11 +335,10 @@ class _Repos(object):
 class _GitFetcher(threading.Thread):
     """
     Thread replicating remote data to local repos roughly using git pull and
-    git fetch. When done schedules a poll_all_repos call and exits.
+    git fetch. When done schedules a callback call and exits.
     """
 
     def __init__(self, repos, fetch_done_cb):
-
         self.log = log.getPluginLogger('git.fetcher')
         threading.Thread.__init__(self)
         self._shutdown = False
@@ -369,7 +368,7 @@ class _GitFetcher(threading.Thread):
                        str(time.time() - start))
 
 
-class _DisplayCtx:
+class _DisplayCtx(object):
     ''' Simple container for displaying commits stuff. '''
     SNARF = 'snarf'
     REPOLOG = 'repolog'
@@ -381,10 +380,33 @@ class _DisplayCtx:
         self.repo = repository
         self.kind = kind if kind else self.COMMITS
 
-    @property
-    def use_group_header(self):
-        ''' Return True if the group header should be applied. '''
-        return self.repo.options.group_header and self.kind != self.REPOLOG
+    _use_group_header = property(lambda self:
+        self.repo.options.group_header and self.kind != self.REPOLOG)
+
+    def _display_some_commits(self, commits, branch):
+        "Display a nicely-formatted list of commits for an author/branch."
+        for commit in commits:
+            lines = _format_message(self, commit, branch)
+            for line in lines:
+                msg = ircmsgs.privmsg(self.channel, line)
+                self.irc.queueMsg(msg)
+
+    def _get_limited_commits(self, commits_by_branch):
+        "Return the topmost commits which are OK to display."
+        top_commits = []
+        for key in commits_by_branch.keys():
+            top_commits.extend(commits_by_branch[key])
+        top_commits = sorted(top_commits, key = lambda c: c.committed_date)
+        commits_at_once = config.global_option('maxCommitsAtOnce').value
+        if len(top_commits) > commits_at_once:
+            self.irc.queueMsg(ircmsgs.privmsg(self.channel,
+                             "Showing latest %d of %d commits to %s..." % (
+                             commits_at_once,
+                             len(top_commits),
+                             self.repo.name,
+                             )))
+        top_commits = top_commits[-commits_at_once:]
+        return top_commits
 
     @property
     def format(self):
@@ -393,6 +415,29 @@ class _DisplayCtx:
             return self.repo.options.snarf_msg
         else:
             return self.repo.options.commit_msg
+
+    def display_commits(self, commits_by_branch):
+        "Display a nicely-formatted list of commits in a channel."
+
+        if not commits_by_branch:
+            return
+        top_commits = self._get_limited_commits(commits_by_branch)
+        for branch, all_commits in commits_by_branch.iteritems():
+            for a in set([c.author.name for c in all_commits]):
+                commits = [c for c in all_commits
+                               if c.author.name == a and c in top_commits]
+                if not self._use_group_header:
+                    self._display_some_commits(commits, branch)
+                    continue
+                if self.kind == _DisplayCtx.SNARF:
+                    line = "Talking about %s?" % commits[0].hexsha[0:7]
+                else:
+                    name = self.repo.options.name
+                    line = "%s pushed %d commit(s) to %s at %s" % (
+                        a, len(commits), branch, name)
+                msg = ircmsgs.privmsg(self.channel, line)
+                self.irc.queueMsg(msg)
+                self._display_some_commits(commits, branch)
 
 
 class _Scheduler(object):
@@ -490,56 +535,7 @@ class Git(callbacks.PluginRegexp):
         self.scheduler = _Scheduler(self)
         if hasattr(irc, 'reply'):
             n = len(self.repos.get())
-            msg = 'Git reinitialized with ' + nItems(n, 'repository') + '.'
-            irc.reply(msg)
-
-    def _display_some_commits(self, ctx, commits, branch):
-        "Display a nicely-formatted list of commits for an author/branch."
-        for commit in commits:
-            lines = _format_message(ctx, commit, branch)
-            for line in lines:
-                msg = ircmsgs.privmsg(ctx.channel, line)
-                ctx.irc.queueMsg(msg)
-
-    def _get_limited_commits(self, ctx, commits_by_branch):
-        "Return the topmost commits which are OK to display."
-        top_commits = []
-        for key in commits_by_branch.keys():
-            top_commits.extend(commits_by_branch[key])
-        top_commits = sorted(top_commits, key = lambda c: c.committed_date)
-        commits_at_once = self.registryValue('maxCommitsAtOnce')
-        if len(top_commits) > commits_at_once:
-            ctx.irc.queueMsg(ircmsgs.privmsg(ctx.channel,
-                             "Showing latest %d of %d commits to %s..." % (
-                             commits_at_once,
-                             len(top_commits),
-                             ctx.repo.name,
-                             )))
-        top_commits = top_commits[-commits_at_once:]
-        return top_commits
-
-    def _display_commits(self, ctx, commits_by_branch):
-        "Display a nicely-formatted list of commits in a channel."
-
-        if not commits_by_branch:
-            return
-        top_commits = self._get_limited_commits(ctx, commits_by_branch)
-        for branch, all_commits in commits_by_branch.iteritems():
-            for a in set([c.author.name for c in all_commits]):
-                commits = [c for c in all_commits
-                               if c.author.name == a and c in top_commits]
-                if not ctx.use_group_header:
-                    self._display_some_commits(ctx, commits, branch)
-                    continue
-                if ctx.kind == _DisplayCtx.SNARF:
-                    line = "Talking about %s?" % commits[0].hexsha[0:7]
-                else:
-                    name = ctx.repo.options.name
-                    line = "%s pushed %d commit(s) to %s at %s" % (
-                        a, len(commits), branch, name)
-                msg = ircmsgs.privmsg(ctx.channel, line)
-                ctx.irc.queueMsg(msg)
-                self._display_some_commits(ctx, commits, branch)
+            irc.reply('Git reinitialized with %s.' % nItems(n, 'repository'))
 
     def _poll_repository(self, repository, targets):
         ''' Perform poll of a repo, display changes. '''
@@ -548,7 +544,7 @@ class Git(callbacks.PluginRegexp):
                 new_commits_by_branch = repository.get_new_commits()
                 for irc, channel in targets:
                     ctx = _DisplayCtx(irc, channel, repository)
-                    self._display_commits(ctx, new_commits_by_branch)
+                    ctx.display_commits(new_commits_by_branch)
                 for branch in new_commits_by_branch:
                     repository.commit_by_branch[branch] = \
                        repository.get_commit(branch)
@@ -587,7 +583,7 @@ class Git(callbacks.PluginRegexp):
             except git.exc.BadObject:
                 continue
             ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.SNARF)
-            self._display_commits(ctx, {'unknown': [commit]})
+            ctx.display_commits({'unknown': [commit]})
             break
 
     def poll_all_repos(self, repolist = None, throw = False):
@@ -641,7 +637,7 @@ class Git(callbacks.PluginRegexp):
             return
         commits = repository.get_recent_commits(branch_head, count)[::-1]
         ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.REPOLOG)
-        self._display_commits(ctx, {branch: commits})
+        ctx.display_commits({branch: commits})
 
     repolog = wrap(repolog, ['channel',
                              'somethingWithoutSpaces',
@@ -746,7 +742,7 @@ class Git(callbacks.PluginRegexp):
         """
 
         def cloning_done_cb(result):
-            ''' Callback invoked after cloning si done. '''
+            ''' Callback invoked after cloning is done. '''
             if isinstance(result, _Repository):
                 self.repos.append(result)
                 irc.reply("Repository created and cloned")
