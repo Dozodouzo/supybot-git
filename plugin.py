@@ -91,7 +91,7 @@ def _format_message(ctx, commit, branch='unknown'):
         'C': commit.hexsha,
         'e': commit.author.email,
         'm': commit.message.split('\n')[0],
-        'n': ctx.repo.options.name,
+        'n': ctx.repo.name,
         'S': ' ',
         'u': ctx.repo.options.url,
         'r': '\x0f',
@@ -202,7 +202,6 @@ class _Repository(object):
                 return config.repo_option(reponame, key).value
 
             self.repo_dir = config.global_option('repoDir').value
-            self.name = reponame
             self.url = get_value('url')
             self.channels = get_value('channels')
             self.branches = get_value('branches')
@@ -215,7 +214,6 @@ class _Repository(object):
             self.group_header = get_value('groupHeader')
             self.enable_snarf = get_value('enableSnarf')
             self.timeout = get_value('fetchTimeout')
-            self.repo = config.global_option('repos').get(reponame)
 
     def __init__(self, reponame):
         """
@@ -224,15 +222,14 @@ class _Repository(object):
         """
         self.log = log.getPluginLogger('git.repository')
         self.options = self.Options(reponame)
+        self.name = reponame
         self.commit_by_branch = {}
         self.lock = threading.Lock()
         self.repo = None
-        self.path = os.path.join(self.options.repo_dir, self.options.name)
+        self.path = os.path.join(self.options.repo_dir, self.name)
         if world.testing:
             self._clone()
             self.init()
-
-    name = property(lambda self: self.options.name)
 
     branches = property(lambda self: self.commit_by_branch.keys())
 
@@ -243,10 +240,9 @@ class _Repository(object):
         thread. callback is called with a _Repository or an error msg.
         opts need to contain at least name, url and channels.
         '''
-        if not opts:
-            opts = {}
-        for key, value in opts.iteritems():
-            config.repo_option(reponame, key).setValue(value)
+        if opts:
+            for key, value in opts.iteritems():
+                config.repo_option(reponame, key).setValue(value)
         r = _Repository(reponame)
         try:
             r._clone()                             # pylint: disable=W0212
@@ -428,8 +424,8 @@ class _DisplayCtx(object):
     def _get_limited_commits(self, commits_by_branch):
         "Return the topmost commits which are OK to display."
         top_commits = []
-        for key in commits_by_branch.keys():
-            top_commits.extend(commits_by_branch[key])
+        for commits in commits_by_branch.values():
+            top_commits.extend(commits)
         top_commits = sorted(top_commits, key = lambda c: c.committed_date)
         commits_at_once = config.global_option('maxCommitsAtOnce').value
         if len(top_commits) > commits_at_once:
@@ -466,7 +462,7 @@ class _DisplayCtx(object):
                 if self.kind == _DisplayCtx.SNARF:
                     line = "Talking about %s?" % commits[0].hexsha[0:7]
                 else:
-                    name = self.repo.options.name
+                    name = self.repo.name
                     line = "%s pushed %d commit(s) to %s at %s" % (
                         a, len(commits), branch, name)
                 msg = ircmsgs.privmsg(self.channel, line)
