@@ -238,7 +238,7 @@ class _Repository(object):
         '''
         Create a new repository, clone and invoke cloning_done_cb on main
         thread. callback is called with a _Repository or an error msg.
-        opts need to contain at least name, url and channels.
+        opts need to contain at least url and channels.
         '''
         if opts:
             for key, value in opts.iteritems():
@@ -748,7 +748,7 @@ class Git(callbacks.PluginRegexp):
         if reponame in config.global_option('repolist').value:
             irc.reply('Error: repo exists')
             return
-        opts = {'url': url, 'name': reponame, 'channels': channels}
+        opts = {'url': url, 'channels': channels}
         if world.testing:
             _Repository.create(reponame, cloning_done_cb, opts)
             irc.reply("Repository created and cloned")
