@@ -64,11 +64,8 @@ try:
     import git
 except ImportError:
     raise Exception("GitPython is not installed.")
-if not git.__version__.startswith('0.'):
+if not git.__version__.startswith('0.3'):
     raise Exception("Unsupported GitPython version.")
-if not int(git.__version__[2]) == 3:
-    raise Exception("Unsupported GitPython version: " + git.__version__[2])
-from git import GitCommandError
 
 
 HELP_URL = 'https://github.com/leamas/supybot-git'
@@ -255,7 +252,7 @@ class _Repository(object):
             r._clone()                             # pylint: disable=W0212
             r.init()
             todo = lambda: cloning_done_cb(r)
-        except (GitCommandError, git.exc.NoSuchPathError) as e:
+        except (git.GitCommandError, git.exc.NoSuchPathError) as e:
             todo = lambda: cloning_done_cb(str(e))
         _Scheduler.run_callback(todo, 'clonecallback')
 
@@ -278,7 +275,7 @@ class _Repository(object):
                 else:
                     self.repo.remote().fetch(branch + ':' + branch)
                 self.commit_by_branch[branch] = self.repo.commit(branch)
-            except GitCommandError as e:
+            except git.GitCommandError as e:
                 self.log.error("Cannot checkout repo branch: " + branch)
                 raise e
         return self
@@ -397,7 +394,7 @@ class _GitFetcher(threading.Thread):
             try:
                 with repository.lock:
                     repository.fetch()
-            except GitCommandError as e:
+            except git.GitCommandError as e:
                 self.log.error("Error in git command: " + str(e),
                                    exc_info=True)
         _Scheduler.run_callback(self._callback, 'fetch_callback')
@@ -631,7 +628,7 @@ class Git(callbacks.PluginRegexp):
             return
         try:
             branch_head = repository.get_commit(branch)
-        except GitCommandError:
+        except git.GitCommandError:
             self.log.info("Cant get branch commit", exc_info=True)
             irc.reply("Internal error retrieving repolog data")
             return
