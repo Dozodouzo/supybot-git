@@ -35,7 +35,7 @@ _SNARF_TXT = "Eavesdrop and send commit info if a commit id is found in" \
 
 _CHANNELS_TXT = """A space-separated list of channels where
  notifications of new commits will appear.  If you provide more than one
- channel, all channels will receive commit messages.  This is also a weak
+ channel, all channels will receive commit messages. This is also a weak
  privacy measure; people on other channels will not be able to request
  information about the repository. All interaction with the repository is
  limited to these channels."""

@@ -61,8 +61,11 @@ Getting started
       $ git clone https://github.com/leamas/supybot-git Git
 ```
 
-* Restart the server and use `@list` to verify that the plugin is loaded:
+* Load the plugin and use `@list` to verify (restarting server should
+  also load the plugin)
 ```
+    <leamas> @load Git
+    <al-bot-test> The operation succeeded.
     <leamas> @list
     <al-bot-test> leamas: Admin, Channel, Config, Git, Owner, and User
 ```
@@ -139,7 +142,7 @@ Settings for each repo are below these. To see available settings:
 ```
 
 These variables can be manipulated using the @config command in the same way.
-NOTE! After modifying the variables use `@reload git` to make them effective.
+NOTE! After modifying the variables use `@reload Git` to make them effective.
 
 It's possible to edit the config file "by hand" as described in documentation
 for @config. However, structural changes is better done by `repoadd` and
@@ -209,7 +212,7 @@ Command List
 
 * `gitconf`: Display overall, common configuraiton for all repositories.
 
-* `reload git`: Read new configuration, restart polling.
+* `reload Git`: Read new configuration, restart polling.
 
 * `githelp` : Display url to help (i. e., this file).
 

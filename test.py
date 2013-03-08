@@ -92,7 +92,7 @@ class PluginTestCaseUtilMixin(object):
                     'Git reinitialized with 0 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
 
 class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -108,7 +108,7 @@ class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 0 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testReloadOne(self):
         self.assertNotError('identify suptest suptest', private=True)
@@ -119,7 +119,7 @@ class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 1 repository.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
 
 class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -142,7 +142,7 @@ class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 3 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testRepositoryList(self):
         expected = [
@@ -173,7 +173,7 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 3 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testRepositoryListNoAccess(self):
         expected = ['No repositories configured for this channel.']
@@ -202,7 +202,7 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testLogNonexistent(self):
         expected = ['No repository named nothing, showing available:',
@@ -277,7 +277,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testKillNonexistent(self):
         expected = ['No repository named nothing, showing available:',
@@ -286,7 +286,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testKillBadChannel(self):
         expected = 'Repository deleted'
@@ -294,7 +294,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 1 repository.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testKill(self):
         expected = "Repository deleted"
@@ -302,7 +302,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 1 repository.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
 
 class GitBranchTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -323,7 +323,7 @@ class GitBranchTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testBranchNonexistent(self):
         expected = ['No repository named nothing, showing available:',
