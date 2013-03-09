@@ -5,7 +5,14 @@
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
-#   * Do whatever you want
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions, and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions, and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the author of this software nor the name of
+#     contributors to this software may be used to endorse or promote products
+#     derived from this software without specific prior written consent.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -28,31 +35,28 @@ from supybot import conf
 from supybot import registry
 
 _URL_TEXT = "The URL to the git repository, which may be a path on" \
-            " disk, or a URL to a remote repository."""
-
-_NAME_TXT = "This is the nickname you use in all commands that interact" \
-            " that interact with the repository"""
+            " disk, or an URL to a remote repository."""
 
 _SNARF_TXT = "Eavesdrop and send commit info if a commit id is found in" \
              " IRC chat"""
 
 _CHANNELS_TXT = """A space-separated list of channels where
  notifications of new commits will appear.  If you provide more than one
- channel, all channels will receive commit messages.  This is also a weak
+ channel, all channels will receive commit messages. This is also a weak
  privacy measure; people on other channels will not be able to request
  information about the repository. All interaction with the repository is
  limited to these channels."""
 
-_BRANCHES_TXT = """Space-separated list fo branches to follow for
+_BRANCHES_TXT = """Space-separated list of branches to follow for
  this repository. Accepts wildcards, * means all branches, release*
  all branches beginnning with release."""
 
 _MESSAGE1_TXT = """First line of message describing a commit in e. g., log
- or snarf  messages. Constructed from printf-style substitutions.  See
+ messages. Constructed from printf-style substitutions.  See
  https://github.com/leamas/supybot-git for details."""
 
 _MESSAGE2_TXT = """Second line of message describing a commit in e. g., log
- or snarf  messages. Often used for a view link. Constructed from printf-style
+ messages. Often used for a view link. Constructed from printf-style
  substitutions, see https://github.com/leamas/supybot-git for details."""
 
 _SNARFMSG1_TXT = """First line of message describing a commit in a snarf
@@ -63,18 +67,16 @@ _SNARFMSG2_TXT = """Second line of message describing a commit in
  a  snarf  message. Often used for a view link. Constructed from printf-style
  substitutions, see https://github.com/leamas/supybot-git for details."""
 
-_GROUP_HDR_TXT = """ A boolean setting. If true, the commits for
+_GROUP_HDR_TXT = """A boolean setting. If true, the commits for
  each author is preceded by a single line like 'John le Carre committed
  5 commits to our-game". A line like "Talking about fa1afe1?" is displayed
  before presenting data for a commit id found in the irc conversation."""
 
 _TIMEOUT_TXT = """Max time for fetch operations (seconds). A value of 0
-disables polling of this repo completely"""
+disables timeout for this repo completely"""
 
 
 _REPO_OPTIONS = {
-    'name':
-        lambda: registry.String('', _NAME_TXT),
     'url':
         lambda: registry.String('', _URL_TEXT),
     'channels':
@@ -86,7 +88,7 @@ _REPO_OPTIONS = {
     'commitMessage2':
         lambda: registry.String('', _MESSAGE2_TXT),
     'snarfMessage1':
-        lambda: registry.String('I. e., [%n|%b|%a] %m', _SNARFMSG1_TXT),
+        lambda: registry.String('I. e., [%n|%a] %m', _SNARFMSG1_TXT),
     'snarfMessage2':
         lambda: registry.String('', _SNARFMSG2_TXT),
     'enableSnarf':
@@ -94,17 +96,17 @@ _REPO_OPTIONS = {
     'groupHeader':
         lambda: registry.Boolean(True, _GROUP_HDR_TXT),
     'fetchTimeout':
-        lambda: registry.Integer(300, _TIMEOUT_TXT),
+        lambda: registry.Integer(60, _TIMEOUT_TXT),
 }
 
 
 def global_option(option):
-    ''' Return a overall plugin option (registered at load time). '''
+    ''' Return an overall plugin option (registered at load time). '''
     return conf.supybot.plugins.get('git').get(option)
 
 
 def repo_option(reponame, option):
-    ''' Return repo-specific option, registering on the fly. '''
+    ''' Return a repo-specific option, registering on the fly. '''
     repos = global_option('repos')
     try:
         repo = repos.get(reponame)
@@ -118,7 +120,7 @@ def repo_option(reponame, option):
 
 
 def unregister_repo(reponame):
-    ''' Unregister  repository from config dtbse. '''
+    ''' Unregister  repository from registry. '''
     try:
         global_option('repos').unregister(reponame)
     except registry.NonExistentRegistryEntry:
@@ -138,7 +140,9 @@ def configure(advanced):
 
 Git = conf.registerPlugin('Git')
 
-conf.registerGroup(Git, 'repos')
+conf.registerGroup(Git, 'repos',
+    help = "Internal list of repositories (hands off, please).")
+
 conf.registerGlobalValue(Git, 'repolist',
         registry.SpaceSeparatedListOfStrings([],
            "Internal list of configured repos, please don't touch "))

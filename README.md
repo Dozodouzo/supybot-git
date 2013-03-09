@@ -18,7 +18,7 @@ NEWS
 
 * I (i. e., Alec Leamas) forked Mike's original work. Mike and I have agreed on
   not merging this fork with Mike's so this fork will be maintained separately.
-* It's now possible to track to several (by default all) branches in a repo.
+* It's now possible to track several (by default all) branches in a repo.
 * All configuration is done in supybot's config system, see Configuration below
   (no git.ini file anymore).
 * A group header has been added, see screenshots at
@@ -61,8 +61,11 @@ Getting started
       $ git clone https://github.com/leamas/supybot-git Git
 ```
 
-* Restart the server and use @list to verify that the plugin is loaded:
+* Load the plugin and use `@list` to verify (restarting server should
+  also load the plugin)
 ```
+    <leamas> @load Git
+    <al-bot-test> The operation succeeded.
     <leamas> @list
     <al-bot-test> leamas: Admin, Channel, Config, Git, Owner, and User
 ```
@@ -74,15 +77,16 @@ Getting started
      <al-bot-test> The operation succeeded.
 ```
 
-* Define your first repo, using a a repository you have access to and
+* Define your first repo, using a repository you have access to and
   a channel you want to feed e. g.,
 ```
     <leamas> @repoadd leamas-git https://github.com/leamas/supybot-git #al-bot-test
+    <al-bot-test> leamas: Cloning of leamas-git started...
     <al-bot-test> leamas: Repository created and cloned
 ```
 
 * Initially you will follow all branches (the 'branches' config item is '\*') Use
-  the repostat command to see branches in you repo:
+  the `@repostat` command to see branches in you repo:
 ```
     <leamas> @repostat leamas-git
     <al-bot-test> leamas: Watched branches: master, devel
@@ -138,7 +142,7 @@ Settings for each repo are below these. To see available settings:
 ```
 
 These variables can be manipulated using the @config command in the same way.
-NOTE! After modifying the variables use `@reload git` to make them effective.
+NOTE! After modifying the variables use `@reload Git` to make them effective.
 
 It's possible to edit the config file "by hand" as described in documentation
 for @config. However, structural changes is better done by `repoadd` and
@@ -154,7 +158,7 @@ snarfMessage2 configuration items (see above). They use the following
 substitution parameters:
 
     %a       Author name
-    %b       Branch being watched
+    %b       Branch being watched ('unknown' in snarf messages).
     %c       Commit SHA (first 7 digits)
     %C       Commit SHA (entire 40 digits)
     %e       Author email
@@ -188,7 +192,7 @@ Command List
 ------------
 
 * `repolog`: Takes a repository name, a branch  and an optional
-  count parameter (default 1).  Shows the last n commits on that branch
+  count parameter (default 1).  Shows the last n commits on that branch.
   Only works if the repository is configured for the current channel.
 
 * `repolist`: List any known repositories configured for the current
@@ -202,7 +206,15 @@ Command List
 
 * `repokill`: Remove an  existing repository given it's name.
 
-* `reload git`: Read new configuration, restart polling.
+* `repopoll`: Run a poll on a repository if given one, else poll all of them.
+
+* `repoconf`: Display configuration for a repository.
+
+* `gitconf`: Display overall, common configuraiton for all repositories.
+
+* `reload Git`: Read new configuration, restart polling.
+
+* `githelp` : Display url to help (i. e., this file).
 
 How Notification Works
 ----------------------

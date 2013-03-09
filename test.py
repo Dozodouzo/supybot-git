@@ -4,7 +4,14 @@
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
-#   * Do whatever you want.
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions, and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions, and the following disclaimer in the
+#     documentation and/or other materials provided with the distribution.
+#   * Neither the name of the author of this software nor the name of
+#     contributors to this software may be used to endorse or promote products
+#     derived from this software without specific prior written consent.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -89,10 +96,10 @@ class PluginTestCaseUtilMixin(object):
         conf.supybot.plugins.Git.repolist.setValue('')
         self.assertNotError('reload Git')
         expected = ['The operation succeeded.',
-                    'Git reinitialized with 0 repository.',
+                    'Git reinitialized with 0 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
 
 class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -105,10 +112,10 @@ class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         self.assertNotError('register suptest suptest', private=True)
 
     def testReloadEmpty(self):
-        expected = ['Git reinitialized with 0 repository.',
+        expected = ['Git reinitialized with 0 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testReloadOne(self):
         self.assertNotError('identify suptest suptest', private=True)
@@ -119,7 +126,7 @@ class GitReloadTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 1 repository.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
 
 class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -142,7 +149,7 @@ class GitRepositoryListTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 3 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testRepositoryList(self):
         expected = [
@@ -173,7 +180,7 @@ class GitNoAccessTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 3 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testRepositoryListNoAccess(self):
         expected = ['No repositories configured for this channel.']
@@ -202,7 +209,7 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testLogNonexistent(self):
         expected = ['No repository named nothing, showing available:',
@@ -252,7 +259,7 @@ class GitLogTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
     def testSnarf(self):
         expected = [
             "Talking about cbe46d8?",
-            "I. e., [test2|unknown|Tyrion Lannister]"
+            "I. e., [test2|Tyrion Lannister]"
                 " I am the only one getting things done",
         ]
         self.assertResponses('What about cbe46d8?', expected,
@@ -277,7 +284,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testKillNonexistent(self):
         expected = ['No repository named nothing, showing available:',
@@ -286,7 +293,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testKillBadChannel(self):
         expected = 'Repository deleted'
@@ -294,7 +301,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 1 repository.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testKill(self):
         expected = "Repository deleted"
@@ -302,7 +309,7 @@ class GitKillTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 1 repository.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
 
 class GitBranchTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
@@ -323,7 +330,7 @@ class GitBranchTest(ChannelPluginTestCase, PluginTestCaseUtilMixin):
         expected = ['Git reinitialized with 2 repositories.',
                     'The operation succeeded.'
         ]
-        self.assertResponses('reload git', expected)
+        self.assertResponses('reload Git', expected)
 
     def testBranchNonexistent(self):
         expected = ['No repository named nothing, showing available:',
