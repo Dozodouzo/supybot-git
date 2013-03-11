@@ -14,6 +14,13 @@ monitor Git repositories.  Features:
 NEWS
 ----
 
+### March 19, 2013
+* supybot-git is now in Fedora! The package has landed in Fedora-17, Fedora-18
+  and the upcoming Fedora-19 and can be installed using the usual package
+  tools.
+* After discussion with Mike Mueller the plugin is relicensed using the original
+  BSD terms.
+
 ### March 5, 2013
 
 * I (i. e., Alec Leamas) forked Mike's original work. Mike and I have agreed on
@@ -54,8 +61,9 @@ Getting started
   your server e. g., using supybot-wizard. Verify that you can start and
   contact your bot.
 
-* Unpack the plugin into the plugins directory (created by
-  supybot-wizard):
+* On Fedora, you can just install the supybot-git package and proceed to
+  next step. Otherwise unpack the plugin into the plugins directory
+  (created by supybot-wizard):
 ```
       $ cd plugins
       $ git clone https://github.com/leamas/supybot-git Git
@@ -145,7 +153,7 @@ These variables can be manipulated using the @config command in the same way.
 NOTE! After modifying the variables use `@reload Git` to make them effective.
 
 It's possible to edit the config file "by hand" as described in documentation
-for @config. However, structural changes is better done by `repoadd` and
+for @config. However, structural changes are better done using `repoadd` and
 `repokill` even if the config  file is edited after that.
 
 
@@ -181,7 +189,7 @@ As noted above, the default is a simpler version of this:
 
     commitMessage1 = [%s|%b|%a] %m
     commitMessage2 = '' (unset)
-    snarfMessage1  = I. e., [%s|%b|%a] %m
+    snarfMessage1  = I. e., [%s|%a] %m
     snarfMessage2  = ''
 
 Leading space in any message line is discarded. Prepend line with %S if you
@@ -210,7 +218,7 @@ Command List
 
 * `repoconf`: Display configuration for a repository.
 
-* `gitconf`: Display overall, common configuraiton for all repositories.
+* `gitconf`: Display overall, common configuration for all repositories.
 
 * `reload Git`: Read new configuration, restart polling.
 
