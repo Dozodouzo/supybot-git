@@ -54,8 +54,9 @@ Getting started
   your server e. g., using supybot-wizard. Verify that you can start and
   contact your bot.
 
-* Unpack the plugin into the plugins directory (created by
-  supybot-wizard):
+* On Fedora, you can just install the supybot-git package and proceed to 
+  next step. Otherwise unpack the plugin into the plugins directory 
+  (created by supybot-wizard):
 ```
       $ cd plugins
       $ git clone https://github.com/leamas/supybot-git Git
