@@ -575,7 +575,7 @@ class Git(callbacks.PluginRegexp):
             n = len(self.repos.get())
             irc.reply('Git reinitialized with %s.' % nItems(n, 'repository'))
 
-    def _parse_repo(self, irc, msg, repo, channel):
+    def _parse_repo(self, irc, msg, repo, channel = None):
         """ Parse first parameter as a repo, return repository or None. """
         matches = filter(lambda r: r.name == repo, self.repos.get())
         if not matches:
@@ -586,7 +586,7 @@ class Git(callbacks.PluginRegexp):
         # Enforce a modest privacy measure... don't let people probe the
         # repository outside the designated channel.
         repository = matches[0]
-        if channel not in repository.options.channels:
+        if channel and channel not in repository.options.channels:
             irc.reply('Sorry, not allowed in this channel.')
             return None
         return repository
@@ -686,12 +686,12 @@ class Git(callbacks.PluginRegexp):
 
     gitconf = wrap(gitconf, [])
 
-    def repoconf(self, irc, msg, args, channel, repo):
+    def repoconf(self, irc, msg, args, repo):
         """ <repository name>
 
         Display configuration for a given repository.
         """
-        if not self._parse_repo(irc, msg, repo, channel):
+        if not self._parse_repo(irc, msg, repo):
             return
         for key, group in config.global_option('repos').getValues():
             if key.endswith('.' + repo):
@@ -703,15 +703,15 @@ class Git(callbacks.PluginRegexp):
         for key, option in repogroup.getValues():
             irc.reply(key.rsplit('.', 1)[1] + ': ' + str(option.value))
 
-    repoconf = wrap(repoconf, ['channel', 'somethingWithoutSpaces'])
+    repoconf = wrap(repoconf, ['owner', 'somethingWithoutSpaces'])
 
-    def repopoll(self, irc, msg, args, channel, repo):
+    def repopoll(self, irc, msg, args, repo):
         """ [repository name]
 
         Poll a named repository, or all if none given.
         """
         if repo:
-            repository = self._parse_repo(irc, msg, repo, channel)
+            repository = self._parse_repo(irc, msg, repo)
             if not repository:
                 return
             repos = [repository]
@@ -723,9 +723,8 @@ class Git(callbacks.PluginRegexp):
         except Exception as e:              # pylint: disable=W0703
             irc.reply('Error: ' + str(e))
 
-    repopoll = wrap(repopoll, ['owner',
-                               'channel',
-                               optional('somethingWithoutSpaces')])
+    repopoll = wrap(repopoll,
+                    ['owner', optional('somethingWithoutSpaces')])
 
     def githelp(self, irc, msg, args):
         """ Takes no arguments
@@ -736,7 +735,7 @@ class Git(callbacks.PluginRegexp):
 
     githelp = wrap(githelp, [])
 
-    def repoadd(self, irc, msg, args, channel, reponame, url, channels):
+    def repoadd(self, irc, msg, args, reponame, url, channels):
         """ <repository name> <url> <channel[,channel...]>
 
         Add a new repository with name, url and a comma-separated list
@@ -766,12 +765,11 @@ class Git(callbacks.PluginRegexp):
         irc.reply('Cloning of %s started...' % reponame)
 
     repoadd = wrap(repoadd, ['owner',
-                             'channel',
                              'somethingWithoutSpaces',
                              'somethingWithoutSpaces',
                              commalist('validChannel')])
 
-    def repokill(self, irc, msg, args, channel, reponame):
+    def repokill(self, irc, msg, args, reponame):
         """ <repository name>
 
         Removes an existing repository given it's name.
@@ -784,8 +782,7 @@ class Git(callbacks.PluginRegexp):
         shutil.rmtree(found_repos[0].path)
         irc.reply('Repository deleted')
 
-    repokill = wrap(repokill,
-                    ['owner', 'channel', 'somethingWithoutSpaces'])
+    repokill = wrap(repokill, ['owner', 'somethingWithoutSpaces'])
 
 Class = Git
 
