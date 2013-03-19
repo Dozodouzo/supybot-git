@@ -298,7 +298,7 @@ class _Repository(object):
             except IndexError:
                 self.log.error('Timeout in fetch() for %s at %s' %
                                    (branch, self.name))
-            except OSError as e:
+            except (OSError, git.GitCommandError) as e:
                 self.log.error("Problem accessing local repo: " +
                                str(e))
 
