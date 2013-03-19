@@ -183,6 +183,7 @@ substitution parameters:
     %!       Toggle bold
     %r       Reset text color and attributes
     %S       Single space, only meaningful at line start.
+    %w       Committer name
     %%       A literal percent sign.
 
 Here is a format string template that I am partial to:

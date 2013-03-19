@@ -102,6 +102,7 @@ def _format_message(ctx, commit, branch='unknown'):
         'S': ' ',
         'u': ctx.repo.options.url,
         'r': '\x0f',
+        'w': commit.committer,
         '!': '\x02',
         '%': '%',
     }
