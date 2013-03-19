@@ -57,6 +57,9 @@ the command `pip install -r requirements.txt`.
 
 Getting started
 ---------------
+
+Install and load plugin:
+
 * Refer to the supybot documentation to install supybot and configure
   your server e. g., using supybot-wizard. Verify that you can start and
   contact your bot.
@@ -77,6 +80,8 @@ Getting started
     <leamas> @list
     <al-bot-test> leamas: Admin, Channel, Config, Git, Owner, and User
 ```
+
+Configure and test:
 
 * Identify yourself for the bot in a *private window*. Creating user +
   password is part of the supybot-wizard process.
