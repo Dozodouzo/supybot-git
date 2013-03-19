@@ -14,6 +14,13 @@ monitor Git repositories.  Features:
 NEWS
 ----
 
+### March 19, 2013
+* supybot-git is now in Fedora! The package has landed in Fedora-17, Fedora-18
+  and the upcoming Fedora-19 and can be installed using the usual package
+  tools.
+* After discussion with Mike Mueller the plugin is relicensed using the original
+  BSD terms.
+
 ### March 5, 2013
 
 * I (i. e., Alec Leamas) forked Mike's original work. Mike and I have agreed on
@@ -54,8 +61,8 @@ Getting started
   your server e. g., using supybot-wizard. Verify that you can start and
   contact your bot.
 
-* On Fedora, you can just install the supybot-git package and proceed to 
-  next step. Otherwise unpack the plugin into the plugins directory 
+* On Fedora, you can just install the supybot-git package and proceed to
+  next step. Otherwise unpack the plugin into the plugins directory
   (created by supybot-wizard):
 ```
       $ cd plugins
