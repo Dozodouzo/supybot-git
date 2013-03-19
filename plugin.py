@@ -461,9 +461,9 @@ class _DisplayCtx(object):
             return
         top_commits = self._get_limited_commits(commits_by_branch)
         for branch, all_commits in commits_by_branch.iteritems():
-            for a in set([c.author.name for c in all_commits]):
+            for a in set([c.committer.name for c in all_commits]):
                 commits = [c for c in all_commits
-                               if c.author.name == a and c in top_commits]
+                            if c.committer.name == a and c in top_commits]
                 if not self._use_group_header:
                     self._display_some_commits(commits, branch)
                     continue
