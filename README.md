@@ -13,6 +13,8 @@ monitor Git repositories.  Features:
 
 NEWS
 ----
+### Sept 12, 2013
+* Added a new repoclone command, see Command List. below.
 
 ### March 19, 2013
 * supybot-git is now in Fedora! The package has landed in Fedora-17, Fedora-18
@@ -218,6 +220,9 @@ Command List
   which should be connected. The url might be a relative path, interpreted from
   supybot's start directory.
 
+* `repoclone`: Removes and re-clones repository, to handle upstream broken
+  history.
+
 * `repokill`: Remove an  existing repository given it's name.
 
 * `repopoll`: Run a poll on a repository if given one, else poll all of them.
@@ -229,6 +234,7 @@ Command List
 * `reload Git`: Read new configuration, restart polling.
 
 * `githelp` : Display url to help (i. e., this file).
+
 
 How Notification Works
 ----------------------

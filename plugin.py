@@ -356,13 +356,14 @@ class _Repos(object):
             repolist = [r.name for r in self._list]
             config.global_option('repolist').setValue(repolist)
 
-    def remove(self, repository):
+    def remove(self, repository, unregister=True):
         ''' Remove repository from list. '''
         with self._lock:
             self._list.remove(repository)
             repolist = [r.name for r in self._list]
             config.global_option('repolist').setValue(repolist)
-            config.unregister_repo(repository.name)
+            if unregister:
+                config.unregister_repo(repository.name)
 
     def get(self):
         ''' Return copy of the repository list. '''
@@ -664,6 +665,36 @@ class Git(callbacks.PluginRegexp):
             })
 
     repolist = wrap(repolist, ['channel'])
+
+    def repoclone(self, irc, msg, args, channel, repo):
+        """ <repository name>
+        Remove and re-clone the given repository.
+        """
+
+        def cloning_done_cb(result):
+            ''' Callback invoked after cloning is done. '''
+            if isinstance(result, _Repository):
+                self.repos.append(result)
+                irc.reply("Repository re-created and cloned")
+            else:
+                self.log.info("Cannot clone: " + str(result))
+                irc.reply("Error: Cannot clone repo: " + str(result))
+
+        repo = self._parse_repo(irc, msg, repo, channel)
+        if not repo:
+            return
+        self.repos.remove(repo, unregister=False)
+        if world.testing:
+            _Repository.create(repo.name, cloning_done_cb, None)
+            irc.reply("Repository created and cloned")
+            return
+        t = threading.Thread(target = _Repository.create,
+                             args = (repo.name, cloning_done_cb, None))
+        t.start()
+        irc.reply('%s removed, cloning started...' % repo.name)
+
+
+    repoclone = wrap(repoclone, ['channel', 'somethingWithoutSpaces'])
 
     def repostat(self, irc, msg, args, channel, repo):
         """ <repository name>
