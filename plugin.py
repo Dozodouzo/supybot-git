@@ -580,14 +580,14 @@ class Git(callbacks.PluginRegexp):
         matches = filter(lambda r: r.name == repo, self.repos.get())
         if not matches:
             irc.sendMsg(ircmsgs.privmsg(msg.args[0],'No repository named %s, showing available:'
-                      % repo)
+                      % repo))
             self.repolist(irc, msg, [])
             return None
         # Enforce a modest privacy measure... don't let people probe the
         # repository outside the designated channel.
         repository = matches[0]
         if channel not in repository.options.channels:
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Sorry, not allowed in this channel.')
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Sorry, not allowed in this channel.'))
             return None
         return repository
 
@@ -625,15 +625,15 @@ class Git(callbacks.PluginRegexp):
         if not repository:
             return
         if not branch in repository.branches:
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'No such branch being watched: ' + branch)
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'No such branch being watched: ' + branch))
             irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Available branches: ' +
-                          ', '.join(repository.branches))
+                          ', '.join(repository.branches)))
             return
         try:
             branch_head = repository.get_commit(branch)
         except git.GitCommandError:
             self.log.info("Cant get branch commit", exc_info=True)
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Internal error retrieving repolog data")
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Internal error retrieving repolog data"))
             return
         commits = repository.get_recent_commits(branch_head, count)[::-1]
         ctx = _DisplayCtx(irc, channel, repository, _DisplayCtx.REPOLOG)
@@ -652,7 +652,7 @@ class Git(callbacks.PluginRegexp):
         repositories = filter(lambda r: channel in r.options.channels,
                               self.repos.get())
         if not repositories:
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'No repositories configured for this channel.')
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'No repositories configured for this channel.'))
             return
         fmt = '\x02%(name)s\x02  %(url)s %(branch)s'
         for r in repositories:
@@ -660,7 +660,7 @@ class Git(callbacks.PluginRegexp):
                 'name': r.name,
                 'url': r.options.url,
                 'branch': nItems(len(r.branches), 'branch')
-            })
+            }))
 
     repolist = wrap(repolist, ['channel'])
 
@@ -672,7 +672,7 @@ class Git(callbacks.PluginRegexp):
         repository = self._parse_repo(irc, msg, repo, channel)
         if not repository:
             return
-        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Watched branches: ' + ', '.join(repository.branches))
+        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Watched branches: ' + ', '.join(repository.branches)))
 
     repostat = wrap(repostat, ['channel', 'somethingWithoutSpaces'])
 
@@ -682,7 +682,7 @@ class Git(callbacks.PluginRegexp):
         Display overall common configuration for all repositories.
         """
         for option in ['maxCommitsAtOnce', 'pollPeriod', 'repoDir']:
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],option + ': ' + str(config.global_option(option)))
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],option + ': ' + str(config.global_option(option))))
 
     gitconf = wrap(gitconf, [])
 
@@ -698,10 +698,10 @@ class Git(callbacks.PluginRegexp):
                 repogroup = group
                 break
         else:
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Internal error: can't find repo?!")
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Internal error: can't find repo?!"))
             return
         for key, option in repogroup.getValues():
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],key.rsplit('.', 1)[1] + ': ' + str(option.value))
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],key.rsplit('.', 1)[1] + ': ' + str(option.value)))
 
     repoconf = wrap(repoconf, ['channel', 'somethingWithoutSpaces'])
 
@@ -721,7 +721,7 @@ class Git(callbacks.PluginRegexp):
             _poll_all_repos(repos, throw = True)
             irc.replySuccess()
         except Exception as e:              # pylint: disable=W0703
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Error: ' + str(e))
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Error: ' + str(e)))
 
     repopoll = wrap(repopoll, ['owner',
                                'channel',
@@ -732,7 +732,7 @@ class Git(callbacks.PluginRegexp):
 
         Display the help url.
         """
-        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'See: ' + HELP_URL)
+        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'See: ' + HELP_URL))
 
     githelp = wrap(githelp, [])
 
@@ -747,23 +747,23 @@ class Git(callbacks.PluginRegexp):
             ''' Callback invoked after cloning is done. '''
             if isinstance(result, _Repository):
                 self.repos.append(result)
-                irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Repository created and cloned")
+                irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Repository created and cloned"))
             else:
                 self.log.info("Cannot clone: " + str(result))
-                irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Error: Cannot clone repo: " + str(result))
+                irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Error: Cannot clone repo: " + str(result)))
 
         if reponame in config.global_option('repolist').value:
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Error: repo exists')
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Error: repo exists'))
             return
         opts = {'url': url, 'channels': channels}
         if world.testing:
             _Repository.create(reponame, cloning_done_cb, opts)
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Repository created and cloned")
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],"Repository created and cloned"))
             return
         t = threading.Thread(target = _Repository.create,
                              args = (reponame, cloning_done_cb, opts))
         t.start()
-        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Cloning of %s started...' % reponame)
+        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Cloning of %s started...' % reponame))
 
     repoadd = wrap(repoadd, ['owner',
                              'channel',
@@ -778,11 +778,11 @@ class Git(callbacks.PluginRegexp):
         """
         found_repos = [r for r in self.repos.get() if r.name == reponame]
         if not found_repos:
-            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Error: repo does not exist')
+            irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Error: repo does not exist'))
             return
         self.repos.remove(found_repos[0])
         shutil.rmtree(found_repos[0].path)
-        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Repository deleted')
+        irc.sendMsg(ircmsgs.privmsg(msg.args[0],'Repository deleted'))
 
     repokill = wrap(repokill,
                     ['owner', 'channel', 'somethingWithoutSpaces'])
